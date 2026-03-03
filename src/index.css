@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --color-matera-blue: #001E60;
+  --color-matera-blue-dark: #001133;
+  --color-matera-green: #00E5FF;
+  --color-matera-green-dark: #00B3CC;
+  --color-matera-bg: #0A0F1C;
+  --color-matera-card: #131B2F;
+  --color-matera-text: #E2E8F0;
+  --color-matera-muted: #94A3B8;
+}
+
+body {
+  background-color: var(--color-matera-bg);
+  color: var(--color-matera-text);
+  font-family: 'Inter', sans-serif;
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+

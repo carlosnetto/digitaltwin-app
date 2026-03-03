@@ -1,0 +1,5 @@
+{
+  "name": "Matera Wallet",
+  "description": "Multicurrency digital account fintech app using Matera's Digital Twin ledger.",
+  "requestFramePermissions": []
+}
