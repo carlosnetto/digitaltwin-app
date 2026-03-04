@@ -17,6 +17,11 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
+@keyframes qr-scan {
+  0%, 100% { top: 4px; opacity: 0.9; }
+  50%       { top: calc(100% - 6px); opacity: 0.6; }
+}
+
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none;

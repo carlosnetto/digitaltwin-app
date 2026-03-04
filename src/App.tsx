@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StoreProvider, useStore } from './store';
 import { Wallet as WalletType } from './types';
-import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode } from 'lucide-react';
 import QRCode from 'react-qr-code';
 
 // Simple Toast component
@@ -18,7 +18,7 @@ function CurrencyIcon({ currency, symbol }: { currency: string, symbol: string }
   if (currency === 'USDC') {
     return (
       <img
-        src="/assets/Circle_USDC_Logo.svg.png"
+        src={`${import.meta.env.BASE_URL}assets/Circle_USDC_Logo.svg.png`}
         alt="USDC"
         className="w-full h-full object-cover"
       />
@@ -27,7 +27,7 @@ function CurrencyIcon({ currency, symbol }: { currency: string, symbol: string }
   if (currency === 'USDT') {
     return (
       <img
-        src="/assets/tether-usdt-logo.svg"
+        src={`${import.meta.env.BASE_URL}assets/tether-usdt-logo.svg`}
         alt="USDT"
         className="w-full h-full object-cover"
       />
@@ -240,7 +240,7 @@ function Dashboard() {
                     {tx.type === 'receive' ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
                   </div>
                   <div>
-                    <p className="text-white font-medium">{tx.type === 'receive' ? 'Received' : 'Sent'}</p>
+                    <p className="text-white font-medium">{tx.description}</p>
                     <p className="text-xs text-matera-muted">{new Date(tx.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                     {/* 
                       FEATURE: Multi-chain Off-chain Balances
@@ -979,19 +979,80 @@ function SendModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
   );
 }
 
-function BottomNav() {
+function QRScannerModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+      {/* Header */}
+      <div className="flex items-center px-6 pt-14 pb-4">
+        <button onClick={onClose} className="text-white/60 hover:text-white transition-colors p-1">
+          <X size={26} />
+        </button>
+        <h2 className="flex-1 text-center text-white font-semibold text-lg pr-8">
+          Scan a Payment QR Code
+        </h2>
+      </div>
+      <p className="text-white/40 text-sm text-center px-10 mb-10">
+        Align any QR code within the frame — we'll detect the type and take you straight to payment
+      </p>
+
+      {/* Viewfinder */}
+      <div className="flex-1 flex items-center justify-center px-10">
+        <div className="relative w-full max-w-[280px] aspect-square">
+          {/* Background of the viewfinder area */}
+          <div className="absolute inset-0 bg-white/[0.04] rounded-xl" />
+
+          {/* Corner brackets */}
+          <div className="absolute top-0 left-0 w-9 h-9 border-t-[3px] border-l-[3px] border-matera-green rounded-tl-xl" />
+          <div className="absolute top-0 right-0 w-9 h-9 border-t-[3px] border-r-[3px] border-matera-green rounded-tr-xl" />
+          <div className="absolute bottom-0 left-0 w-9 h-9 border-b-[3px] border-l-[3px] border-matera-green rounded-bl-xl" />
+          <div className="absolute bottom-0 right-0 w-9 h-9 border-b-[3px] border-r-[3px] border-matera-green rounded-br-xl" />
+
+          {/* Animated scan line */}
+          <div
+            className="absolute left-3 right-3 h-[2px] rounded-full"
+            style={{
+              background: 'linear-gradient(90deg, transparent, #00E5FF, transparent)',
+              boxShadow: '0 0 8px 2px rgba(0,229,255,0.4)',
+              animation: 'qr-scan 2.4s ease-in-out infinite',
+            }}
+          />
+
+          {/* Placeholder QR icon to hint what to put here */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <QrCode size={72} className="text-white/10" />
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom hint */}
+      <div className="pb-16 text-center">
+        <p className="text-white/30 text-xs">Keep the QR code steady inside the frame</p>
+      </div>
+    </div>
+  );
+}
+
+function BottomNav({ onScanPress }: { onScanPress: () => void }) {
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-matera-card border-t border-white/5 md:hidden">
-      <div className="flex justify-around items-center p-4">
-        <button className="flex flex-col items-center gap-1 text-matera-green">
+      <div className="flex justify-around items-end px-4 pt-2 pb-4">
+        <button className="flex flex-col items-center gap-1 text-matera-green pb-1">
           <Wallet size={24} />
           <span className="text-[10px] font-medium">Wallets</span>
         </button>
-        <button className="flex flex-col items-center gap-1 text-matera-muted hover:text-white transition-colors">
-          <Activity size={24} />
-          <span className="text-[10px] font-medium">Activity</span>
+
+        {/* Central raised QR scan button */}
+        <button
+          onClick={onScanPress}
+          className="flex flex-col items-center gap-1 -mt-7"
+        >
+          <div className="w-16 h-16 rounded-full bg-matera-green flex items-center justify-center shadow-[0_0_20px_rgba(0,229,255,0.4)] active:scale-95 transition-transform">
+            <QrCode size={28} className="text-matera-blue-dark" />
+          </div>
+          <span className="text-[10px] font-medium text-matera-muted mt-0.5">Scan</span>
         </button>
-        <button className="flex flex-col items-center gap-1 text-matera-muted hover:text-white transition-colors">
+
+        <button className="flex flex-col items-center gap-1 text-matera-muted hover:text-white transition-colors pb-1">
           <Settings size={24} />
           <span className="text-[10px] font-medium">Settings</span>
         </button>
@@ -1069,6 +1130,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
 
   if (!isAuthenticated) {
     return <Login onLogin={() => setIsAuthenticated(true)} />;
@@ -1079,7 +1141,8 @@ export default function App() {
       <div className="min-h-screen bg-matera-bg pb-20 md:pb-0 md:pl-64 animate-in fade-in duration-500">
         <Sidebar />
         <Dashboard />
-        <BottomNav />
+        <BottomNav onScanPress={() => setShowScanner(true)} />
+        {showScanner && <QRScannerModal onClose={() => setShowScanner(false)} />}
       </div>
     </StoreProvider>
   );

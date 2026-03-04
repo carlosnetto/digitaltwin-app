@@ -1,0 +1,17 @@
+{
+  "name": "digitaltwin-app",
+  "account_id": "45281eba1857e04d45fe46d31bdc2f0b",
+  "compatibility_date": "2026-03-03",
+  "main": "./worker.ts",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "routes": [
+    { "pattern": "materalabs.us/digitaltwin-app/*", "zone_name": "materalabs.us" },
+    { "pattern": "materalabs.us/digitaltwin-app", "zone_name": "materalabs.us" }
+  ],
+  "vars": {
+    "BASE_PATH": "/digitaltwin-app"
+  }
+}

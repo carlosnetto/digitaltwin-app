@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { Wallet, Transaction, ReceiveDetailInfo } from './types';
+import { Wallet, Transaction, ReceiveDetailInfo, TX } from './types';
 
 interface StoreState {
   wallets: Wallet[];
@@ -15,15 +15,45 @@ const INITIAL_WALLETS: Wallet[] = [
   { id: '1', currency: 'BRL', name: 'Brazilian Real', symbol: 'R$', type: 'fiat', balance: 1500.50, receiveDetails: null },
 ];
 
+const d = (daysAgo: number) => new Date(Date.now() - daysAgo * 86400000).toISOString();
+
 const INITIAL_TRANSACTIONS: Transaction[] = [
-  { id: 't3', walletId: '3', type: 'receive', amount: 250.00, currency: 'USDC', date: new Date(Date.now() - 259200000).toISOString(), status: 'completed', destination: '0x123...abc', txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef', network: 'Ethereum' },
-  { id: 't3_send', walletId: '3', type: 'send', amount: 50.00, currency: 'USDC', date: new Date(Date.now() - 86400000).toISOString(), status: 'completed', destination: '0x999...xyz', txHash: '5Kjxyz1234567890abcdef1234567890abcdef1234567890abcdef1234567890', network: 'Solana' },
-  { id: 't4', walletId: '4', type: 'receive', amount: 100.00, currency: 'USDT', date: new Date(Date.now() - 345600000).toISOString(), status: 'completed', destination: '0x456...def', txHash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678', network: 'Polygon' },
-  { id: 't4_send', walletId: '4', type: 'send', amount: 25.00, currency: 'USDT', date: new Date(Date.now() - 172800000).toISOString(), status: 'completed', destination: '0x888...uvw', txHash: '0x9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedc', network: 'Ethereum' },
-  { id: 't2', walletId: '2', type: 'receive', amount: 500.00, currency: 'USD', date: new Date(Date.now() - 172800000).toISOString(), status: 'completed', destination: 'ACH Transfer' },
-  { id: 't2_send', walletId: '2', type: 'send', amount: 120.00, currency: 'USD', date: new Date(Date.now() - 43200000).toISOString(), status: 'completed', destination: 'Wire Transfer' },
-  { id: 't1', walletId: '1', type: 'receive', amount: 1500.50, currency: 'BRL', date: new Date(Date.now() - 86400000).toISOString(), status: 'completed', destination: 'Pix Transfer' },
-  { id: 't1_send', walletId: '1', type: 'send', amount: 350.00, currency: 'BRL', date: new Date(Date.now() - 36000000).toISOString(), status: 'completed', destination: 'Pix to John Doe' },
+  // USD wallet
+  { id: 'u1',  walletId: '2', type: 'receive', amount: 3200.00, currency: 'USD', date: d(1),  status: 'completed', transactionCode: TX.DIRECT_DEPOSIT_PAYROLL.code,        description: TX.DIRECT_DEPOSIT_PAYROLL.label },
+  { id: 'u2',  walletId: '2', type: 'send',    amount: 1800.00, currency: 'USD', date: d(1),  status: 'completed', transactionCode: TX.CREDIT_CARD_PAYMENT.code,            description: TX.CREDIT_CARD_PAYMENT.label },
+  { id: 'u3',  walletId: '2', type: 'send',    amount: 120.00,  currency: 'USD', date: d(2),  status: 'completed', transactionCode: TX.BILL_PAYMENT_RECURRING.code,         description: TX.BILL_PAYMENT_RECURRING.label },
+  { id: 'u4',  walletId: '2', type: 'send',    amount: 64.50,   currency: 'USD', date: d(3),  status: 'completed', transactionCode: TX.DEBIT_CARD_PURCHASE.code,            description: TX.DEBIT_CARD_PURCHASE.label },
+  { id: 'u5',  walletId: '2', type: 'send',    amount: 39.99,   currency: 'USD', date: d(4),  status: 'completed', transactionCode: TX.DEBIT_CARD_PURCHASE_RECURRING.code,  description: TX.DEBIT_CARD_PURCHASE_RECURRING.label },
+  { id: 'u6',  walletId: '2', type: 'receive', amount: 200.00,  currency: 'USD', date: d(5),  status: 'completed', transactionCode: TX.ZELLE_RECEIVED.code,                 description: TX.ZELLE_RECEIVED.label },
+  { id: 'u7',  walletId: '2', type: 'send',    amount: 85.00,   currency: 'USD', date: d(6),  status: 'completed', transactionCode: TX.ZELLE_SENT.code,                     description: TX.ZELLE_SENT.label },
+  { id: 'u8',  walletId: '2', type: 'send',    amount: 300.00,  currency: 'USD', date: d(7),  status: 'completed', transactionCode: TX.LOAN_PAYMENT.code,                   description: TX.LOAN_PAYMENT.label },
+  { id: 'u9',  walletId: '2', type: 'send',    amount: 3.50,    currency: 'USD', date: d(8),  status: 'completed', transactionCode: TX.ATM_FEE_NON_NETWORK.code,            description: TX.ATM_FEE_NON_NETWORK.label },
+  { id: 'u10', walletId: '2', type: 'send',    amount: 200.00,  currency: 'USD', date: d(8),  status: 'completed', transactionCode: TX.ATM_WITHDRAWAL.code,                 description: TX.ATM_WITHDRAWAL.label },
+  { id: 'u11', walletId: '2', type: 'receive', amount: 12.50,   currency: 'USD', date: d(10), status: 'completed', transactionCode: TX.REWARD_CASHBACK.code,                description: TX.REWARD_CASHBACK.label },
+  { id: 'u12', walletId: '2', type: 'send',    amount: 49.95,   currency: 'USD', date: d(12), status: 'pending',   transactionCode: TX.BILL_PAYMENT.code,                   description: TX.BILL_PAYMENT.label },
+
+  // BRL wallet
+  { id: 'b1',  walletId: '1', type: 'receive', amount: 8500.00, currency: 'BRL', date: d(1),  status: 'completed', transactionCode: TX.DIRECT_DEPOSIT_PAYROLL.code,        description: TX.DIRECT_DEPOSIT_PAYROLL.label },
+  { id: 'b2',  walletId: '1', type: 'send',    amount: 350.00,  currency: 'BRL', date: d(2),  status: 'completed', transactionCode: TX.P2P_SENT.code,                      description: TX.P2P_SENT.label },
+  { id: 'b3',  walletId: '1', type: 'send',    amount: 189.90,  currency: 'BRL', date: d(3),  status: 'completed', transactionCode: TX.DEBIT_CARD_PURCHASE_ONLINE.code,    description: TX.DEBIT_CARD_PURCHASE_ONLINE.label },
+  { id: 'b4',  walletId: '1', type: 'receive', amount: 500.00,  currency: 'BRL', date: d(4),  status: 'completed', transactionCode: TX.P2P_RECEIVED.code,                  description: TX.P2P_RECEIVED.label },
+  { id: 'b5',  walletId: '1', type: 'send',    amount: 1200.00, currency: 'BRL', date: d(5),  status: 'completed', transactionCode: TX.BILL_PAYMENT_RECURRING.code,        description: TX.BILL_PAYMENT_RECURRING.label },
+  { id: 'b6',  walletId: '1', type: 'send',    amount: 67.80,   currency: 'BRL', date: d(6),  status: 'completed', transactionCode: TX.DEBIT_CARD_PURCHASE.code,           description: TX.DEBIT_CARD_PURCHASE.label },
+  { id: 'b7',  walletId: '1', type: 'receive', amount: 250.00,  currency: 'BRL', date: d(8),  status: 'completed', transactionCode: TX.MERCHANT_CREDIT_REFUND.code,        description: TX.MERCHANT_CREDIT_REFUND.label },
+  { id: 'b8',  walletId: '1', type: 'send',    amount: 15.90,   currency: 'BRL', date: d(10), status: 'completed', transactionCode: TX.MONTHLY_MAINTENANCE_FEE.code,       description: TX.MONTHLY_MAINTENANCE_FEE.label },
+
+  // USDC wallet
+  { id: 'c1',  walletId: '3', type: 'receive', amount: 250.00,  currency: 'USDC', date: d(3),  status: 'completed', transactionCode: TX.EXTERNAL_TRANSFER_IN.code,         description: TX.EXTERNAL_TRANSFER_IN.label,  txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcd', network: 'Ethereum' },
+  { id: 'c2',  walletId: '3', type: 'send',    amount: 50.00,   currency: 'USDC', date: d(1),  status: 'completed', transactionCode: TX.P2P_SENT.code,                     description: TX.P2P_SENT.label,              txHash: '5Kjxyz1234567890abcdef1234567890abcdef1234567890abcdef12345678', network: 'Solana' },
+  { id: 'c3',  walletId: '3', type: 'receive', amount: 100.00,  currency: 'USDC', date: d(5),  status: 'completed', transactionCode: TX.MERCHANT_CREDIT_REFUND.code,       description: TX.MERCHANT_CREDIT_REFUND.label,txHash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678', network: 'Polygon' },
+  { id: 'c4',  walletId: '3', type: 'send',    amount: 30.00,   currency: 'USDC', date: d(7),  status: 'completed', transactionCode: TX.BILL_PAYMENT.code,                 description: TX.BILL_PAYMENT.label,          txHash: '0x9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedc', network: 'Ethereum' },
+  { id: 'c5',  walletId: '3', type: 'receive', amount: 20.00,   currency: 'USDC', date: d(9),  status: 'completed', transactionCode: TX.REWARD_CASHBACK.code,              description: TX.REWARD_CASHBACK.label,       txHash: '0xdeadbeef1234567890abcdef1234567890abcdef1234567890abcdef123456', network: 'Ethereum' },
+
+  // USDT wallet
+  { id: 'd1',  walletId: '4', type: 'receive', amount: 100.00,  currency: 'USDT', date: d(4),  status: 'completed', transactionCode: TX.EXTERNAL_TRANSFER_IN.code,         description: TX.EXTERNAL_TRANSFER_IN.label,  txHash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678', network: 'Polygon' },
+  { id: 'd2',  walletId: '4', type: 'send',    amount: 25.00,   currency: 'USDT', date: d(2),  status: 'completed', transactionCode: TX.P2P_SENT.code,                     description: TX.P2P_SENT.label,              txHash: '0x9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedc', network: 'Ethereum' },
+  { id: 'd3',  walletId: '4', type: 'send',    amount: 10.00,   currency: 'USDT', date: d(6),  status: 'completed', transactionCode: TX.DEBIT_CARD_PURCHASE_ONLINE.code,   description: TX.DEBIT_CARD_PURCHASE_ONLINE.label, txHash: '0xcafe1234567890abcdef1234567890abcdef1234567890abcdef1234567890', network: 'Tron' },
+  { id: 'd4',  walletId: '4', type: 'receive', amount: 35.00,   currency: 'USDT', date: d(10), status: 'completed', transactionCode: TX.RTP_RECEIVED.code,                 description: TX.RTP_RECEIVED.label,          txHash: '0xfeed1234567890abcdef1234567890abcdef1234567890abcdef1234567890', network: 'Tron' },
 ];
 
 const StoreContext = createContext<StoreState | undefined>(undefined);
@@ -67,6 +97,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
 
     const wallet = wallets.find(w => w.id === walletId);
     if (wallet) {
+      const txType = wallet.type === 'crypto' ? TX.P2P_SENT : TX.ZELLE_SENT;
       const newTx: Transaction = {
         id: Math.random().toString(36).substr(2, 9),
         walletId,
@@ -75,6 +106,8 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
         currency: wallet.currency,
         date: new Date().toISOString(),
         status: 'completed',
+        transactionCode: txType.code,
+        description: txType.label,
         destination,
         network: wallet.type === 'crypto' ? network : undefined,
         txHash: wallet.type === 'crypto' ? `0x${Math.random().toString(16).slice(2, 66)}` : undefined
