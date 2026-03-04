@@ -7,6 +7,9 @@ import java.util.List;
 
 /**
  * Circle-specific extensions on top of {@link StablecoinIssuerAdaptor}.
+ *
+ * <p>TODO: not yet active. Enable with {@code circle.enabled=true} in application.yml.
+ * See TODO.md for the full implementation checklist.
  */
 public interface CircleMintAdaptor extends StablecoinIssuerAdaptor {
 

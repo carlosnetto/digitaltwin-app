@@ -6,6 +6,7 @@ import com.matera.digitaltwin.backoffice.dto.response.BalanceResponse;
 import com.matera.digitaltwin.backoffice.dto.response.CircleOperationResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -18,17 +19,27 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Circle Mint Account adaptor.
+ * Circle Mint Account adaptor — NOT YET PRODUCTION-READY.
  *
- * <p>Uses Spring WebClient (reactive) to call the Circle v1 API.
- * All methods block synchronously via {@code .block()} because the REST controllers
- * expose a synchronous API surface; swap to reactive chain if needed.
+ * <p>Skeleton implementation targeting the Circle v1 REST API.
+ * The request/response mapping is based on Circle API docs and has NOT been
+ * tested against a live Circle account. Activate with {@code circle.enabled=true}.
+ *
+ * <p>TODO before enabling:
+ * <ul>
+ *   <li>Verify endpoint paths against the current Circle API version (v1/v2)</li>
+ *   <li>Switch amounts to raw integer units (Circle uses string decimals — needs mapping strategy)</li>
+ *   <li>Add idempotency key generation/storage to prevent duplicate operations on retry</li>
+ *   <li>Add webhook support for async operation status updates</li>
+ *   <li>Handle Circle sandbox vs production base URL via profile</li>
+ * </ul>
  *
  * <p>API reference: https://developers.circle.com/reference
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "circle", name = "enabled", havingValue = "true")
 @SuppressWarnings({"unchecked", "rawtypes"})
 public class CircleMintAdaptorImpl implements CircleMintAdaptor {
 

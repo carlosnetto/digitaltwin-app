@@ -8,6 +8,7 @@ solana:
   explorer-base-url: https://solscan.io
 
 circle:
+  enabled: false                            # set to true once api-key is configured
   base-url: https://api.circle.com/v1
   api-key: ${CIRCLE_API_KEY:}               # set via CIRCLE_API_KEY env var
   account-id: ${CIRCLE_ACCOUNT_ID:}         # set via CIRCLE_ACCOUNT_ID env var

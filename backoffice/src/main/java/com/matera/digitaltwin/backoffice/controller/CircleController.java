@@ -7,14 +7,18 @@ import com.matera.digitaltwin.backoffice.dto.response.BalanceResponse;
 import com.matera.digitaltwin.backoffice.dto.response.CircleOperationResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+// TODO: Circle endpoints are inactive until circle.enabled=true is set.
+//       See TODO.md for the full implementation checklist.
 @RestController
 @RequestMapping("/api/circle")
 @RequiredArgsConstructor
+@ConditionalOnBean(CircleMintAdaptor.class)
 public class CircleController {
 
     private final CircleMintAdaptor circleMintAdaptor;
