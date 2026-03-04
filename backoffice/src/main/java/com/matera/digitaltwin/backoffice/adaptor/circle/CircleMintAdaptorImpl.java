@@ -21,253 +21,255 @@ import java.util.UUID;
 /**
  * Circle Mint Account adaptor — NOT YET PRODUCTION-READY.
  *
- * <p>Skeleton implementation targeting the Circle v1 REST API.
+ * <p>
+ * Skeleton implementation targeting the Circle v1 REST API.
  * The request/response mapping is based on Circle API docs and has NOT been
- * tested against a live Circle account. Activate with {@code circle.enabled=true}.
+ * tested against a live Circle account. Activate with
+ * {@code circle.enabled=true}.
  *
- * <p>TODO before enabling:
+ * <p>
+ * TODO before enabling:
  * <ul>
- *   <li>Verify endpoint paths against the current Circle API version (v1/v2)</li>
- *   <li>Switch amounts to raw integer units (Circle uses string decimals — needs mapping strategy)</li>
- *   <li>Add idempotency key generation/storage to prevent duplicate operations on retry</li>
- *   <li>Add webhook support for async operation status updates</li>
- *   <li>Handle Circle sandbox vs production base URL via profile</li>
+ * <li>Verify endpoint paths against the current Circle API version (v1/v2)</li>
+ * <li>Switch amounts to raw integer units (Circle uses string decimals — needs
+ * mapping strategy)</li>
+ * <li>Add idempotency key generation/storage to prevent duplicate operations on
+ * retry</li>
+ * <li>Add webhook support for async operation status updates</li>
+ * <li>Handle Circle sandbox vs production base URL via profile</li>
  * </ul>
  *
- * <p>API reference: https://developers.circle.com/reference
+ * <p>
+ * API reference: https://developers.circle.com/reference
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "circle", name = "enabled", havingValue = "true")
-@SuppressWarnings({"unchecked", "rawtypes"})
+@SuppressWarnings("unchecked")
 public class CircleMintAdaptorImpl implements CircleMintAdaptor {
 
-    private final WebClient circleWebClient;
+        private final WebClient circleWebClient;
 
-    // ──────────────────────────── StablecoinIssuerAdaptor ─────────────────────
+        // ──────────────────────────── StablecoinIssuerAdaptor ─────────────────────
 
-    @Override
-    public String getIssuer() {
-        return "circle";
-    }
-
-    @Override
-    public BalanceResponse getAccountBalance(String accountId) {
-        Map<String, Object> body = circleWebClient.get()
-                .uri("/accounts/{id}", accountId)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, this::handleError)
-                .bodyToMono(Map.class)
-                .map(m -> (Map<String, Object>) m)
-                .block();
-
-        Map<String, Object> data = extractData(body);
-        List<Map<String, Object>> balances =
-                (List<Map<String, Object>>) data.getOrDefault("balances", List.of());
-
-        // Circle returns an array of {amount, currency}; use the first entry
-        BigDecimal amount = BigDecimal.ZERO;
-        String currency = "USDC";
-        if (!balances.isEmpty()) {
-            Map<String, Object> first = balances.get(0);
-            amount = new BigDecimal(first.get("amount").toString());
-            currency = first.get("currency").toString();
+        @Override
+        public String getIssuer() {
+                return "circle";
         }
 
-        return BalanceResponse.builder()
-                .address(accountId)
-                .balance(amount)
-                .currency(currency)
-                .network("circle")
-                .build();
-    }
+        @Override
+        public BalanceResponse getAccountBalance(String accountId) {
+                Map<String, Object> body = circleWebClient.get()
+                                .uri("/accounts/{id}", accountId)
+                                .retrieve()
+                                .onStatus(HttpStatusCode::isError, this::handleError)
+                                .bodyToMono(Map.class)
+                                .map(m -> (Map<String, Object>) m)
+                                .block();
 
-    @Override
-    public CircleOperationResponse mint(CircleMintRequest request) {
-        Map<String, Object> payload = Map.of(
-                "idempotencyKey", request.getIdempotencyKey(),
-                "amount", Map.of(
-                        "amount", request.getAmount().toPlainString(),
-                        "currency", request.getCurrency()
-                ),
-                "toAmount", Map.of("currency", request.getCurrency()),
-                "source", Map.of(
-                        "type", "wallet",
-                        "id", request.getAccountId()
-                ),
-                "destination", Map.of(
-                        "type", "blockchain",
-                        "address", request.getDestinationAddress(),
-                        "chain", request.getChain()
-                )
-        );
+                Map<String, Object> data = extractData(body);
+                List<Map<String, Object>> balances = (List<Map<String, Object>>) data.getOrDefault("balances",
+                                List.of());
 
-        Map<String, Object> body = circleWebClient.post()
-                .uri("/transfers")
-                .bodyValue(payload)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, this::handleError)
-                .bodyToMono(Map.class)
-                .map(m -> (Map<String, Object>) m)
-                .block();
+                // Circle returns an array of {amount, currency}; use the first entry
+                BigDecimal amount = BigDecimal.ZERO;
+                String currency = "USDC";
+                if (!balances.isEmpty()) {
+                        Map<String, Object> first = balances.get(0);
+                        amount = new BigDecimal(first.get("amount").toString());
+                        currency = first.get("currency").toString();
+                }
 
-        return mapToOperation(extractData(body), "mint");
-    }
+                // Circle returns human-readable decimals (e.g. "1.00" = 1 USDC).
+                // BalanceResponse.balance uses raw micro-units (6 decimals → × 10^6).
+                long rawBalance = amount.multiply(BigDecimal.valueOf(1_000_000L)).longValue();
 
-    @Override
-    public CircleOperationResponse burn(CircleBurnRequest request) {
-        Map<String, Object> payload = Map.of(
-                "idempotencyKey", request.getIdempotencyKey(),
-                "amount", Map.of(
-                        "amount", request.getAmount().toPlainString(),
-                        "currency", request.getCurrency()
-                ),
-                "source", Map.of(
-                        "type", "blockchain",
-                        "address", request.getSourceAddress(),
-                        "chain", request.getChain()
-                ),
-                "destination", Map.of(
-                        "type", "wallet",
-                        "id", request.getAccountId()
-                )
-        );
-
-        Map<String, Object> body = circleWebClient.post()
-                .uri("/transfers")
-                .bodyValue(payload)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, this::handleError)
-                .bodyToMono(Map.class)
-                .map(m -> (Map<String, Object>) m)
-                .block();
-
-        return mapToOperation(extractData(body), "burn");
-    }
-
-    @Override
-    public CircleOperationResponse transfer(String fromAccountId, String toAddress,
-                                            BigDecimal amount, String chain) {
-        Map<String, Object> payload = Map.of(
-                "idempotencyKey", UUID.randomUUID().toString(),
-                "source", Map.of("type", "wallet", "id", fromAccountId),
-                "destination", Map.of(
-                        "type", "blockchain",
-                        "address", toAddress,
-                        "chain", chain
-                ),
-                "amount", Map.of("amount", amount.toPlainString(), "currency", "USDC")
-        );
-
-        Map<String, Object> body = circleWebClient.post()
-                .uri("/transfers")
-                .bodyValue(payload)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, this::handleError)
-                .bodyToMono(Map.class)
-                .map(m -> (Map<String, Object>) m)
-                .block();
-
-        return mapToOperation(extractData(body), "transfer");
-    }
-
-    // ──────────────────────────── CircleMintAdaptor ────────────────────────────
-
-    @Override
-    public List<CircleOperationResponse> listMints(String accountId) {
-        Map<String, Object> body = circleWebClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/transfers")
-                        .queryParam("sourceWalletId", accountId)
-                        .build())
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, this::handleError)
-                .bodyToMono(Map.class)
-                .map(m -> (Map<String, Object>) m)
-                .block();
-
-        List<Map<String, Object>> items =
-                (List<Map<String, Object>>) body.getOrDefault("data", List.of());
-        return items.stream()
-                .map(item -> mapToOperation(item, "mint"))
-                .toList();
-    }
-
-    @Override
-    public CircleOperationResponse getOperationStatus(String operationId) {
-        Map<String, Object> body = circleWebClient.get()
-                .uri("/transfers/{id}", operationId)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, this::handleError)
-                .bodyToMono(Map.class)
-                .map(m -> (Map<String, Object>) m)
-                .block();
-
-        return mapToOperation(extractData(body), "transfer");
-    }
-
-    // ──────────────────────────── private helpers ───────────────────────────────
-
-    private Map<String, Object> extractData(Map<String, Object> body) {
-        if (body == null) throw new RuntimeException("Empty response from Circle API");
-        Object data = body.get("data");
-        if (data instanceof Map<?, ?> map) return (Map<String, Object>) map;
-        throw new RuntimeException("Unexpected Circle API response shape: " + body);
-    }
-
-    private CircleOperationResponse mapToOperation(Map<String, Object> data, String operationType) {
-        Object amountObj = data.get("amount");
-        BigDecimal amount = BigDecimal.ZERO;
-        String currency = "USDC";
-        String chain = null;
-
-        if (amountObj instanceof Map<?, ?> amountMap) {
-            if (amountMap.get("amount") != null) {
-                amount = new BigDecimal(amountMap.get("amount").toString());
-            }
-            if (amountMap.get("currency") != null) {
-                currency = amountMap.get("currency").toString();
-            }
+                return BalanceResponse.builder()
+                                .address(accountId)
+                                .balance(rawBalance)
+                                .currency(currency)
+                                .network("circle")
+                                .build();
         }
 
-        Object destObj = data.get("destination");
-        if (destObj instanceof Map<?, ?> destination && destination.get("chain") != null) {
-            chain = destination.get("chain").toString();
+        @Override
+        public CircleOperationResponse mint(CircleMintRequest request) {
+                Map<String, Object> payload = Map.of(
+                                "idempotencyKey", request.getIdempotencyKey(),
+                                "amount", Map.of(
+                                                "amount", request.getAmount().toPlainString(),
+                                                "currency", request.getCurrency()),
+                                "toAmount", Map.of("currency", request.getCurrency()),
+                                "source", Map.of(
+                                                "type", "wallet",
+                                                "id", request.getAccountId()),
+                                "destination", Map.of(
+                                                "type", "blockchain",
+                                                "address", request.getDestinationAddress(),
+                                                "chain", request.getChain()));
+
+                Map<String, Object> body = circleWebClient.post()
+                                .uri("/transfers")
+                                .bodyValue(payload)
+                                .retrieve()
+                                .onStatus(HttpStatusCode::isError, this::handleError)
+                                .bodyToMono(Map.class)
+                                .map(m -> (Map<String, Object>) m)
+                                .block();
+
+                return mapToOperation(extractData(body), "mint");
         }
 
-        return CircleOperationResponse.builder()
-                .operationId(safeString(data.get("id")))
-                .status(safeString(data.get("status")))
-                .operationType(operationType)
-                .amount(amount)
-                .currency(currency)
-                .chain(chain)
-                .txHash(safeString(data.get("transactionHash")))
-                .createDate(parseInstant(data.get("createDate")))
-                .updateDate(parseInstant(data.get("updateDate")))
-                .build();
-    }
+        @Override
+        public CircleOperationResponse burn(CircleBurnRequest request) {
+                Map<String, Object> payload = Map.of(
+                                "idempotencyKey", request.getIdempotencyKey(),
+                                "amount", Map.of(
+                                                "amount", request.getAmount().toPlainString(),
+                                                "currency", request.getCurrency()),
+                                "source", Map.of(
+                                                "type", "blockchain",
+                                                "address", request.getSourceAddress(),
+                                                "chain", request.getChain()),
+                                "destination", Map.of(
+                                                "type", "wallet",
+                                                "id", request.getAccountId()));
 
-    private Mono<? extends Throwable> handleError(
-            org.springframework.web.reactive.function.client.ClientResponse response) {
-        return response.bodyToMono(String.class).map(body -> {
-            log.error("Circle API error {}: {}", response.statusCode(), body);
-            return (Throwable) new RuntimeException(
-                    "Circle API error " + response.statusCode() + ": " + body);
-        });
-    }
+                Map<String, Object> body = circleWebClient.post()
+                                .uri("/transfers")
+                                .bodyValue(payload)
+                                .retrieve()
+                                .onStatus(HttpStatusCode::isError, this::handleError)
+                                .bodyToMono(Map.class)
+                                .map(m -> (Map<String, Object>) m)
+                                .block();
 
-    private Instant parseInstant(Object value) {
-        if (value == null) return null;
-        try {
-            return Instant.parse(value.toString());
-        } catch (Exception e) {
-            return null;
+                return mapToOperation(extractData(body), "burn");
         }
-    }
 
-    private String safeString(Object value) {
-        return value != null ? value.toString() : null;
-    }
+        @Override
+        public CircleOperationResponse transfer(String fromAccountId, String toAddress,
+                        BigDecimal amount, String chain) {
+                Map<String, Object> payload = Map.of(
+                                "idempotencyKey", UUID.randomUUID().toString(),
+                                "source", Map.of("type", "wallet", "id", fromAccountId),
+                                "destination", Map.of(
+                                                "type", "blockchain",
+                                                "address", toAddress,
+                                                "chain", chain),
+                                "amount", Map.of("amount", amount.toPlainString(), "currency", "USDC"));
+
+                Map<String, Object> body = circleWebClient.post()
+                                .uri("/transfers")
+                                .bodyValue(payload)
+                                .retrieve()
+                                .onStatus(HttpStatusCode::isError, this::handleError)
+                                .bodyToMono(Map.class)
+                                .map(m -> (Map<String, Object>) m)
+                                .block();
+
+                return mapToOperation(extractData(body), "transfer");
+        }
+
+        // ──────────────────────────── CircleMintAdaptor ────────────────────────────
+
+        @Override
+        public List<CircleOperationResponse> listMints(String accountId) {
+                Map<String, Object> body = circleWebClient.get()
+                                .uri(uriBuilder -> uriBuilder
+                                                .path("/transfers")
+                                                .queryParam("sourceWalletId", accountId)
+                                                .build())
+                                .retrieve()
+                                .onStatus(HttpStatusCode::isError, this::handleError)
+                                .bodyToMono(Map.class)
+                                .map(m -> (Map<String, Object>) m)
+                                .block();
+
+                List<Map<String, Object>> items = (List<Map<String, Object>>) body.getOrDefault("data", List.of());
+                return items.stream()
+                                .map(item -> mapToOperation(item, "mint"))
+                                .toList();
+        }
+
+        @Override
+        public CircleOperationResponse getOperationStatus(String operationId) {
+                Map<String, Object> body = circleWebClient.get()
+                                .uri("/transfers/{id}", operationId)
+                                .retrieve()
+                                .onStatus(HttpStatusCode::isError, this::handleError)
+                                .bodyToMono(Map.class)
+                                .map(m -> (Map<String, Object>) m)
+                                .block();
+
+                return mapToOperation(extractData(body), "transfer");
+        }
+
+        // ──────────────────────────── private helpers ───────────────────────────────
+
+        private Map<String, Object> extractData(Map<String, Object> body) {
+                if (body == null)
+                        throw new RuntimeException("Empty response from Circle API");
+                Object data = body.get("data");
+                if (data instanceof Map<?, ?> map)
+                        return (Map<String, Object>) map;
+                throw new RuntimeException("Unexpected Circle API response shape: " + body);
+        }
+
+        private CircleOperationResponse mapToOperation(Map<String, Object> data, String operationType) {
+                Object amountObj = data.get("amount");
+                BigDecimal amount = BigDecimal.ZERO;
+                String currency = "USDC";
+                String chain = null;
+
+                if (amountObj instanceof Map<?, ?> amountMap) {
+                        if (amountMap.get("amount") != null) {
+                                amount = new BigDecimal(amountMap.get("amount").toString());
+                        }
+                        if (amountMap.get("currency") != null) {
+                                currency = amountMap.get("currency").toString();
+                        }
+                }
+
+                Object destObj = data.get("destination");
+                if (destObj instanceof Map<?, ?> destination && destination.get("chain") != null) {
+                        chain = destination.get("chain").toString();
+                }
+
+                return CircleOperationResponse.builder()
+                                .operationId(safeString(data.get("id")))
+                                .status(safeString(data.get("status")))
+                                .operationType(operationType)
+                                .amount(amount)
+                                .currency(currency)
+                                .chain(chain)
+                                .txHash(safeString(data.get("transactionHash")))
+                                .createDate(parseInstant(data.get("createDate")))
+                                .updateDate(parseInstant(data.get("updateDate")))
+                                .build();
+        }
+
+        private Mono<? extends Throwable> handleError(
+                        org.springframework.web.reactive.function.client.ClientResponse response) {
+                return response.bodyToMono(String.class).map(body -> {
+                        log.error("Circle API error {}: {}", response.statusCode(), body);
+                        return (Throwable) new RuntimeException(
+                                        "Circle API error " + response.statusCode() + ": " + body);
+                });
+        }
+
+        private Instant parseInstant(Object value) {
+                if (value == null)
+                        return null;
+                try {
+                        return Instant.parse(value.toString());
+                } catch (Exception e) {
+                        return null;
+                }
+        }
+
+        private String safeString(Object value) {
+                return value != null ? value.toString() : null;
+        }
 }

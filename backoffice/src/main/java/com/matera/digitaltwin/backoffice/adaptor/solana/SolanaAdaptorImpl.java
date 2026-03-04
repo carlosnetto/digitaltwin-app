@@ -26,7 +26,6 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import software.sava.rpc.json.http.response.TokenBalance;
 
-import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -49,13 +48,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SolanaAdaptorImpl implements SolanaAdaptor {
 
-    private static final long LAMPORTS_PER_SOL = 1_000_000_000L;
     /** SLIP-0010 curve constant for ed25519. */
     private static final byte[] ED25519_CURVE_SEED =
             "ed25519 seed".getBytes(StandardCharsets.UTF_8);
 
     private final SolanaRpcClient rpcClient;
     private final SolanaAccounts solanaAccounts;
+    // NativeProgramClient will be needed when recipient ATA creation is implemented (see TODO.md)
+    @SuppressWarnings("unused")
     private final NativeProgramClient nativeProgramClient;
 
     @Value("${solana.explorer-base-url}")
@@ -334,7 +334,7 @@ public class SolanaAdaptorImpl implements SolanaAdaptor {
         try {
             List<String> words = Arrays.asList(mnemonic.trim().split("\\s+"));
             MnemonicCode.INSTANCE.check(words);   // validates word list + checksum → throws MnemonicException if invalid
-            byte[] seed = MnemonicCode.INSTANCE.toSeed(words, "");
+            byte[] seed = MnemonicCode.toSeed(words, "");
 
             // SLIP-0010 hardened derivation: m/44'/501'/{accountIndex}'/0'
             int[] path = {0x8000002C, 0x800001F5, 0x80000000 + accountIndex, 0x80000000};

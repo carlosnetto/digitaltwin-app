@@ -155,7 +155,7 @@ PublicKey      publicKey()
 // Path: m/44'/501'/{accountIndex}'/0'
 List<String> words = Arrays.asList(mnemonic.trim().split("\\s+"));
 MnemonicCode.INSTANCE.check(words);          // validates + throws MnemonicException if bad
-byte[] seed = MnemonicCode.INSTANCE.toSeed(words, "");
+byte[] seed = MnemonicCode.toSeed(words, "");  // static method
 byte[] privKey = slip10Derive(seed, new int[]{0x8000002C, 0x800001F5, 0x80000000, 0x80000000});
 Signer signer = Signer.createFromPrivateKey(privKey);
 String address    = signer.publicKey().toBase58();

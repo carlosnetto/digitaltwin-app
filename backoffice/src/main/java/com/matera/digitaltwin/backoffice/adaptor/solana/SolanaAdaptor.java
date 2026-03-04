@@ -4,7 +4,6 @@ import com.matera.digitaltwin.backoffice.adaptor.BlockchainAdaptor;
 import com.matera.digitaltwin.backoffice.dto.response.TransactionResponse;
 import com.matera.digitaltwin.backoffice.dto.response.WalletInfoResponse;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 /**

@@ -204,7 +204,7 @@ Derivation standard: **SLIP-0010 ed25519** at path `m/44'/501'/{accountIndex}'/0
 Step 1 — mnemonic → 64-byte seed (bitcoinj):
 ```java
 List<String> words = Arrays.asList(mnemonic.trim().split("\\s+"));
-byte[] seed = MnemonicCode.INSTANCE.toSeed(words, "");   // no passphrase
+byte[] seed = MnemonicCode.toSeed(words, "");   // static method, no passphrase
 ```
 
 Step 2 — SLIP-0010 HMAC-SHA512 chain (implemented in `SolanaAdaptorImpl.slip10Derive()`):
