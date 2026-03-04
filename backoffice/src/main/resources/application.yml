@@ -1,0 +1,13 @@
+server:
+  port: 8080
+
+solana:
+  rpc-url: https://api.devnet.solana.com   # switch to mainnet-beta for prod
+  usdc-mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+  usdt-mint: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB
+  explorer-base-url: https://solscan.io
+
+circle:
+  base-url: https://api.circle.com/v1
+  api-key: ${CIRCLE_API_KEY:}               # set via CIRCLE_API_KEY env var
+  account-id: ${CIRCLE_ACCOUNT_ID:}         # set via CIRCLE_ACCOUNT_ID env var

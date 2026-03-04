@@ -32,3 +32,7 @@ coverage/
 .env.test.local
 .env.production.local
 !.env.example
+
+# Spring Boot local config (equivalent of .env — contains secrets, never commit)
+backoffice/application-local.yml
+!backoffice/application-local.yml.example

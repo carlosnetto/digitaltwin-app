@@ -1,0 +1,11 @@
+solana:
+  # Free public endpoint — rate-limited, fine for single queries, hits limits on getTransaction bulk calls
+  rpc-url: https://api.mainnet-beta.solana.com
+  # Helius (recommended for transaction history) — get a free API key at https://helius.dev
+  # rpc-url: https://mainnet.helius-rpc.com/?api-key=YOUR_KEY
+  # Devnet
+  # rpc-url: https://api.devnet.solana.com
+
+# circle:
+#   api-key: your-circle-api-key-here
+#   account-id: your-circle-account-id-here
