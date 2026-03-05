@@ -4,10 +4,11 @@
 
 A multicurrency mobile wallet prototype demonstrating Matera's Digital Twin ledger concept. Supports USD, BRL (fiat) and USDC, USDT (crypto) wallets. Deployed as a PWA at `materalabs.us/digitaltwin-app`.
 
-Originally scaffolded from a Google AI Studio template. Gemini API removed. No backend server.
+Originally scaffolded from a Google AI Studio template. Gemini API removed.
 
 ## Architecture
 
+### Frontend (PWA)
 ```
 src/
   App.tsx       # All UI: Dashboard, WalletCard, TransactionList, modals, QRScanner, BottomNav, Sidebar, Login
@@ -22,6 +23,30 @@ public/
 worker.ts       # Cloudflare Worker
 wrangler.jsonc  # Cloudflare config
 ```
+
+### Backoffice (Spring Boot — port 8080)
+```
+backoffice/
+  src/main/java/.../
+    adaptor/solana/   # SolanaAdaptorImpl — HD derive, balances, send SOL/token, history
+    adaptor/circle/   # CircleMintAdaptorImpl — gated behind circle.enabled=false
+    controller/       # WalletController: POST /api/wallets, POST /api/wallets/send
+    service/          # WalletProvisioningService, TransactionProvisioningService,
+                      # WalletMonitoringService (@Scheduled), MonitoringPersistenceService
+    repository/       # JDBC repositories for all blockchain_schema tables
+    startup/          # SeedLoader — prompts operator for mnemonic at startup
+  src/main/resources/
+    db/changelog/     # 9 Liquibase migrations → blockchain_schema in PostgreSQL
+    application.yml   # Solana RPC, Circle, monitoring config
+  docker-compose.yml  # SchemaSpy ERD generator (run: docker-compose run schemaspy)
+  docs/erd/           # Generated SchemaSpy HTML ERD (gitignored)
+  SOLANA.md           # Full Solana + provisioning layer developer guide
+  TODO.md             # Backoffice task backlog
+```
+
+Solana SDK: `software.sava` (Solana Foundation endorsed). Do NOT use `solanaj`.
+Database: `blockchain_schema` in PostgreSQL (`global_banking_db` Docker container).
+Mnemonics: RAM only via `SeedGroupRegistry` — never written to disk or DB.
 
 ## Key Patterns
 
@@ -50,8 +75,10 @@ src={`${import.meta.env.BASE_URL}assets/Circle_USDC_Logo.svg.png`}
 src="/assets/Circle_USDC_Logo.svg.png"
 ```
 
-### No Backend
-This is a pure SPA. No server, no tunnel, no API proxy in the worker. The Cloudflare Worker only strips the base path prefix and serves static assets with SPA fallback.
+### Frontend vs Backoffice
+The PWA frontend (`src/`) is a pure SPA — no API calls, all state in `store.tsx`. The Cloudflare Worker only strips the base path prefix and serves static assets with SPA fallback.
+
+The backoffice (`backoffice/`) is a separate Spring Boot process on port 8080. It is not connected to the frontend yet — it manages on-chain wallets independently.
 
 ## Design System
 
