@@ -39,6 +39,16 @@ Deployed to `materalabs.us/digitaltwin-app` via Cloudflare Workers (route-based,
 API exposed at `digitaltwinapp-api.materalabs.us` via Cloudflare Tunnel.
 See `CLOUDFLARE.md` for full deployment and account details.
 
+## Features
+
+- **Live wallet balances** — fetched from mini-core on every load
+- **Buy crypto** — pay with USD or BRL, receive USDC or USDT
+- **Sell crypto** — receive USD or BRL for your USDC or USDT
+- **Convert crypto↔crypto** — swap between USDC and USDT
+- **Convert fiat↔fiat** — swap between USD and BRL
+- **Live exchange rates** — refreshed every 10 minutes from open.er-api.com
+- **Full audit trail** — every conversion records 4 mini-core transaction IDs
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -49,7 +59,8 @@ See `CLOUDFLARE.md` for full deployment and account details.
 | Deployment | Cloudflare Workers + Static Assets |
 | API | Spring Boot 3.3 / Java 21 |
 | Auth | Google OAuth (implicit flow) + server-side domain + DB check |
-| Database | PostgreSQL (`digitaltwinapp` schema) via Liquibase |
+| Database | PostgreSQL (`digitaltwinapp` schema, 11 Liquibase migrations) |
+| Core Banking | Mini-Core (local, `localhost:5001`) |
 | Tunnel | Cloudflare Tunnel (`digitaltwinapp-api.materalabs.us → localhost:8081`) |
 | PWA | Web App Manifest + Service Worker |
 

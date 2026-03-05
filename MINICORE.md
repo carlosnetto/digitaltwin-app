@@ -295,6 +295,59 @@ The system does no FX conversion — amounts are stored as-is.
 
 ---
 
+## How digitaltwin-app Uses Mini-Core
+
+### Account Structure
+
+Account numbers follow the formula `user_id * 1000 + currency_id`:
+
+| Currency | currency_id | Example (user_id=1000) | Account number |
+|----------|-------------|------------------------|----------------|
+| USD      | 100         | 1000 × 1000 + 100      | `1000100`      |
+| BRL      | 101         | 1000 × 1000 + 101      | `1000101`      |
+| USDC     | 103         | 1000 × 1000 + 103      | `1000103`      |
+| USDT     | 104         | 1000 × 1000 + 104      | `1000104`      |
+
+The **Liquidity Buffer** is a system account with `user_id=1`. Its accounts are `1100` (USD), `1101` (BRL), `1103` (USDC), `1104` (USDT). It acts as the counterparty for all buy/sell/convert operations.
+
+Accounts are created via `POST /api/accounts` with `product_type: "DDA"` and the appropriate `currency_code`. The returned `account_id` is stored in `digitaltwinapp.user_accounts.minicore_account_id`.
+
+### Transaction Codes Used
+
+Every conversion creates 4 mini-core transactions. The codes depend on the operation type:
+
+| Operation | User debit | User credit | Pool credit | Pool debit |
+|-----------|-----------|------------|-------------|------------|
+| Buy (fiat→crypto) | 50005 Crypto Purchase Payment | 40003 Crypto Purchase | 10018 Internal Transfer In | 20021 Internal Transfer Out |
+| Sell (crypto→fiat) | 50003 Crypto Sale | 40005 Crypto Sale Proceeds | 10018 Internal Transfer In | 20021 Internal Transfer Out |
+| Convert (crypto→crypto) | 50002 Crypto Conversion Sent | 40002 Crypto Conversion Received | 10018 Internal Transfer In | 20021 Internal Transfer Out |
+| Convert (fiat→fiat) | 50006 Currency Conversion Out | 40006 Currency Conversion In | 10018 Internal Transfer In | 20021 Internal Transfer Out |
+
+All transactions are created with `status: "POSTED"` and `created_by: "digitaltwinapp-api"`.
+
+### Amount Precision
+
+Mini-core enforces a per-currency maximum decimal precision (returns 422 if exceeded). We truncate amounts using `RoundingMode.DOWN` before sending:
+
+| Currency | decimal_places |
+|----------|---------------|
+| USD      | 2             |
+| BRL      | 2             |
+| USDC     | 6             |
+| USDT     | 6             |
+
+This is read from `digitaltwinapp.currencies.decimal_places` at conversion time.
+
+### Exchange Rates
+
+Rates are stored in `digitaltwinapp.exchange_rates` (not in mini-core). The `ExchangeRateService` refreshes non-stablecoin pairs every 10 minutes from `open.er-api.com`. Stablecoin pairs (USDC↔USD, USDT↔USD, USDC↔USDT) are locked at 1.0 and never updated.
+
+### Conversion Record
+
+Every completed conversion is recorded in `digitaltwinapp.conversions` with all 4 mini-core transaction IDs, the applied rate, and both amounts (already truncated to currency precision).
+
+---
+
 ## Notes for Callers
 
 - **`account_id` is a sequential integer** starting at 1000. Do not assume

@@ -225,19 +225,31 @@ System account seeded: `user_id=1`, `email=liquidity-buffer@system`, `name=Liqui
 
 `ExchangeRateService` runs `@Scheduled(fixedDelayString="600000", initialDelayString="10000")` and refreshes all non-stablecoin pairs from `open.er-api.com/v6/latest/{CODE}` (free, no API key). USDC and USDT are mapped to USD for the external lookup.
 
-### Buy/Sell conversions (migration 011 + ConversionService)
+### Buy/Sell/Convert conversions (migration 011 + ConversionService)
 `digitaltwinapp.conversions` table records every completed exchange:
 - Sequential `id` (BIGINT sequence, not UUID)
 - `user_id`, `from_currency_id`, `to_currency_id`, `from_amount`, `to_amount`, `rate`
 - `user_debit_tx_id`, `user_credit_tx_id`, `pool_credit_tx_id`, `pool_debit_tx_id` — all four mini-core transaction IDs
 
-`POST /api/wallets/convert` accepts `{ fromCurrencyCode, toCurrencyCode, fromAmount }`, looks up the real exchange rate from the DB, computes `toAmount`, then fires four mini-core transactions atomically:
+`POST /api/wallets/convert` accepts `{ fromCurrencyCode, toCurrencyCode, fromAmount }`. `ConversionService` detects the operation type from `is_fiat` flags on both currencies and selects the appropriate transaction codes:
 
-| Leg | Account | Direction | Code | Label |
-|-----|---------|-----------|------|-------|
-| User pays | from_currency | DEBIT | 20026 | P2P Sent |
-| User receives | to_currency | CREDIT | 10027 | P2P Received |
-| Pool receives | from_currency | CREDIT | 10018 | Internal Transfer In |
-| Pool delivers | to_currency | DEBIT | 20021 | Internal Transfer Out |
+| Operation | User debit | User credit | Pool credit | Pool debit |
+|-----------|-----------|------------|-------------|------------|
+| Buy (fiat→crypto) | 50005 | 40003 | 10018 | 20021 |
+| Sell (crypto→fiat) | 50003 | 40005 | 10018 | 20021 |
+| Convert (crypto→crypto) | 50002 | 40002 | 10018 | 20021 |
+| Convert (fiat→fiat) | 50006 | 40006 | 10018 | 20021 |
 
-`BuyModal` sends `fromCurrencyCode=fiatCurrency, toCurrencyCode=wallet.currency`. `SellModal` sends the reverse. Both show a "Processing…" spinner, surface API errors inline, and call `refreshWallets()` on success so balances update immediately without a page reload.
+Amounts are truncated (not rounded) to each currency's `decimal_places` before being sent to mini-core. Mini-core enforces 6dp for USDC/USDT and 2dp for USD/BRL — exceeding this returns 422.
+
+**UI menu per wallet type:**
+- Crypto wallets: Receive, Send, Buy, Sell, Convert (crypto→crypto only)
+- Fiat wallets: Receive, Send, Convert (fiat→fiat only)
+
+All modals fetch the live exchange rate from `GET /api/wallets/rate?from=X&to=Y` on open. The Confirm button stays disabled until the rate is loaded.
+
+`GET /api/wallets/rate` — session-protected endpoint returning `{ rate: <BigDecimal> }` for any currency pair in `exchange_rates`.
+
+**Lesson:** `Number(d.rate)` returns `NaN` when the fetch fails with a non-OK response (the error JSON has no `rate` field). Always check `r.ok` before parsing, and guard `isNaN()` before setting state.
+
+**Lesson:** Always truncate amounts to the target currency's decimal precision before calling mini-core. Use `RoundingMode.DOWN` — never round up a financial amount the user didn't agree to pay.
