@@ -623,8 +623,8 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
   useEffect(() => {
     setRate(null);
     fetch(`${import.meta.env.BASE_URL}api/wallets/rate?from=${wallet.currency}&to=${fiatCurrency}`, { credentials: 'include' })
-      .then(r => r.json())
-      .then(d => setRate(Number(d.rate)))
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(d => { const v = Number(d.rate); if (!isNaN(v)) setRate(v); })
       .catch(() => {});
   }, [wallet.currency, fiatCurrency]);
 
@@ -644,7 +644,6 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
 
   const handleCurrencyChange = (currency: 'USD' | 'BRL') => {
     setFiatCurrency(currency);
-    // rate will update via useEffect; recalc after new rate arrives
     setCryptoAmount('');
     setFiatAmount('');
   };
