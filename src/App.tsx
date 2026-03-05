@@ -186,7 +186,7 @@ function Dashboard() {
                     >
                       <ArrowUp className="shrink-0" size={16} /> <span className="truncate">Send</span>
                     </button>
-                    {wallet.type === 'crypto' ? (
+                    {wallet.type === 'crypto' && (
                       <>
                         <button
                           onClick={() => { setSelectedWallet(wallet); setActionType('buy'); }}
@@ -200,14 +200,13 @@ function Dashboard() {
                         >
                           <Minus className="shrink-0" size={16} /> <span className="truncate">Sell</span>
                         </button>
+                        <button
+                          onClick={() => { setSelectedWallet(wallet); setActionType('convert'); }}
+                          className="flex-1 bg-white/10 text-white font-semibold py-2 px-1 sm:px-2 rounded-xl flex items-center justify-center gap-1 sm:gap-2 hover:bg-white/20 transition-colors border border-white/10 text-xs sm:text-sm"
+                        >
+                          <Repeat className="shrink-0" size={16} /> <span className="truncate">Convert</span>
+                        </button>
                       </>
-                    ) : (
-                      <button
-                        onClick={() => { setSelectedWallet(wallet); setActionType('convert'); }}
-                        className="flex-1 bg-white/10 text-white font-semibold py-2 px-1 sm:px-2 rounded-xl flex items-center justify-center gap-1 sm:gap-2 hover:bg-white/20 transition-colors border border-white/10 text-xs sm:text-sm"
-                      >
-                        <Repeat className="shrink-0" size={16} /> <span className="truncate">Convert</span>
-                      </button>
                     )}
                   </div>
                 </div>
@@ -306,70 +305,64 @@ function Dashboard() {
 }
 
 function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void }) {
-  const { wallets } = useStore();
+  const { wallets, refreshWallets } = useStore();
   const [sourceAmount, setSourceAmount] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
-
-  // Exclude current wallet from available target options
-  const targetOptions = wallets.filter(w => w.id !== wallet.id);
-  const [targetWalletId, setTargetWalletId] = useState(targetOptions[0]?.id || '');
   const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  // Hardcode exchange rates relative to USD for simplicity in the prototype
-  // 1 USD = 5 BRL, 1 USD = 1 USDC, 1 USD = 1 USDT
-  const getRateToUSD = (currency: string) => {
-    switch (currency) {
-      case 'BRL': return 0.2; // 1 BRL = 0.2 USD
-      case 'USDC': return 1;
-      case 'USDT': return 1;
-      case 'USD': default: return 1;
-    }
-  };
-
-  const calculateRate = (sourceCurr: string, targetCurr: string) => {
-    const sourceToUsd = getRateToUSD(sourceCurr);
-    const targetToUsd = getRateToUSD(targetCurr);
-    return sourceToUsd / targetToUsd;
-  };
+  // Only other crypto wallets are valid conversion targets
+  const targetOptions = wallets.filter(w => w.type === 'crypto' && w.id !== wallet.id);
+  const [targetWalletId, setTargetWalletId] = useState(targetOptions[0]?.id || '');
 
   const targetWallet = wallets.find(w => w.id === targetWalletId);
-  const rate = targetWallet ? calculateRate(wallet.currency, targetWallet.currency) : 1;
+  // USDC↔USDT is a stablecoin pair — rate is 1:1; display 1 as placeholder
+  const DISPLAY_RATE = 1;
 
   const handleSourceChange = (val: string) => {
     setSourceAmount(val);
     const num = parseFloat(val);
-    if (!isNaN(num)) {
-      setTargetAmount((num * rate).toString());
-    } else {
-      setTargetAmount('');
-    }
+    setTargetAmount(!isNaN(num) ? (num * DISPLAY_RATE).toString() : '');
   };
 
   const handleTargetChange = (val: string) => {
     setTargetAmount(val);
     const num = parseFloat(val);
-    if (!isNaN(num)) {
-      setSourceAmount((num / rate).toString());
-    } else {
-      setSourceAmount('');
-    }
+    setSourceAmount(!isNaN(num) ? (num / DISPLAY_RATE).toString() : '');
   };
 
   const handleTargetWalletChange = (val: string) => {
     setTargetWalletId(val);
-    const newTarget = wallets.find(w => w.id === val);
-    if (newTarget) {
-      const newRate = calculateRate(wallet.currency, newTarget.currency);
-      const num = parseFloat(sourceAmount);
-      if (!isNaN(num)) {
-        setTargetAmount((num * newRate).toString());
-      }
-    }
+    const num = parseFloat(sourceAmount);
+    if (!isNaN(num)) setTargetAmount((num * DISPLAY_RATE).toString());
   };
 
-  const handleConvert = () => {
-    setSuccess(true);
-    setTimeout(onClose, 2000);
+  const handleConvert = async () => {
+    const fromAmount = parseFloat(sourceAmount);
+    if (isNaN(fromAmount) || fromAmount <= 0 || !targetWallet) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/wallets/convert`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromCurrencyCode: wallet.currency, toCurrencyCode: targetWallet.currency, fromAmount }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: 'Request failed' }));
+        setError(body.error ?? 'Conversion failed');
+        return;
+      }
+      setSuccess(true);
+      await refreshWallets();
+      setTimeout(onClose, 2000);
+    } catch {
+      setError('Network error — please try again');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (success) {
@@ -440,20 +433,21 @@ function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => 
                 </select>
               </div>
               <p className="text-xs text-matera-muted mt-2 text-right">
-                Exchange Rate: 1 {wallet.currency} = {rate} {targetWallet?.currency}
+                Exchange Rate: 1 {wallet.currency} = {DISPLAY_RATE} {targetWallet?.currency}
               </p>
             </div>
 
-            {(parseFloat(sourceAmount) > wallet.balance) && (
+            {parseFloat(sourceAmount) > wallet.balance && (
               <p className="text-red-400 text-sm text-center -mt-2">Insufficient funds for this conversion.</p>
             )}
+            {error && <p className="text-red-400 text-sm text-center">{error}</p>}
 
             <button
               onClick={handleConvert}
-              disabled={!sourceAmount || parseFloat(sourceAmount) <= 0 || parseFloat(sourceAmount) > wallet.balance}
+              disabled={loading || !sourceAmount || parseFloat(sourceAmount) <= 0 || parseFloat(sourceAmount) > wallet.balance}
               className="w-full bg-matera-green text-matera-blue-dark font-semibold py-4 px-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-matera-green-dark transition-colors mt-2 text-lg shadow-lg"
             >
-              Confirm Conversion
+              {loading ? 'Processing…' : 'Confirm Conversion'}
             </button>
           </div>
         </div>
