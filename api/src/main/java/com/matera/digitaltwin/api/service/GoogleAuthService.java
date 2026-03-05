@@ -58,8 +58,11 @@ public class GoogleAuthService {
                     "SELECT status FROM digitaltwinapp.users WHERE email = ?",
                     String.class, info.email());
         } catch (EmptyResultDataAccessException e) {
-            log.warn("Login attempt from unprovisioned account: {}", info.email());
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Account not provisioned");
+            log.info("Auto-provisioning new @{} user: {}", allowedDomain, info.email());
+            jdbc.update(
+                    "INSERT INTO digitaltwinapp.users (id, email, name, status) VALUES (gen_random_uuid(), ?, ?, 'active')",
+                    info.email(), info.name());
+            status = "active";
         }
 
         if ("suspended".equals(status)) {
