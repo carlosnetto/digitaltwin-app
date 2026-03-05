@@ -31,9 +31,11 @@ public class ConversionService {
 
     private static final Logger log = LoggerFactory.getLogger(ConversionService.class);
 
-    private static final int TX_CODE_DEBIT  = 20026; // P2P Sent
-    private static final int TX_CODE_CREDIT = 10027; // P2P Received
-    private static final long POOL_USER_ID  = 1L;
+    private static final int TX_CODE_DEBIT        = 20026; // P2P Sent          (user side)
+    private static final int TX_CODE_CREDIT       = 10027; // P2P Received       (user side)
+    private static final int TX_CODE_POOL_CREDIT  = 10018; // Internal Transfer In  (pool side)
+    private static final int TX_CODE_POOL_DEBIT   = 20021; // Internal Transfer Out (pool side)
+    private static final long POOL_USER_ID        = 1L;
 
     private final JdbcTemplate    jdbc;
     private final MiniCoreClient  miniCoreClient;
@@ -86,10 +88,10 @@ public class ConversionService {
         String desc = "Currency conversion " + fromCurrencyCode + " → " + toCurrencyCode;
 
         // ── 5. Execute the 4 mini-core transactions ────────────────────────
-        long userDebitTxId  = miniCoreClient.createTransaction(userFromAccount, TX_CODE_DEBIT,  fromAmount, "DEBIT",  desc);
-        long userCreditTxId = miniCoreClient.createTransaction(userToAccount,   TX_CODE_CREDIT, toAmount,   "CREDIT", desc);
-        long poolCreditTxId = miniCoreClient.createTransaction(poolFromAccount, TX_CODE_CREDIT, fromAmount, "CREDIT", desc);
-        long poolDebitTxId  = miniCoreClient.createTransaction(poolToAccount,   TX_CODE_DEBIT,  toAmount,   "DEBIT",  desc);
+        long userDebitTxId  = miniCoreClient.createTransaction(userFromAccount, TX_CODE_DEBIT,       fromAmount, "DEBIT",  desc);
+        long userCreditTxId = miniCoreClient.createTransaction(userToAccount,   TX_CODE_CREDIT,      toAmount,   "CREDIT", desc);
+        long poolCreditTxId = miniCoreClient.createTransaction(poolFromAccount, TX_CODE_POOL_CREDIT, fromAmount, "CREDIT", desc);
+        long poolDebitTxId  = miniCoreClient.createTransaction(poolToAccount,   TX_CODE_POOL_DEBIT,  toAmount,   "DEBIT",  desc);
 
         if (userDebitTxId < 0 || userCreditTxId < 0) {
             log.error("Conversion failed: user transactions returned error (debit={}, credit={})",

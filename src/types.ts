@@ -35,6 +35,8 @@ export interface Transaction {
 // Transaction codes from mini-core (005-seed-data.xml)
 // Credits: 10xxx | Debits: 20xxx | Fees: 30xxx
 export const TX = {
+  // Internal transfers (liquidity pool side of conversions)
+  INTERNAL_TRANSFER_IN:         { code: 10018, label: 'Internal Transfer In' },
   // Credits
   DIRECT_DEPOSIT_PAYROLL:       { code: 10006, label: 'Direct Deposit - Payroll' },
   ACH_CREDIT:                   { code: 10011, label: 'ACH Credit' },
@@ -46,6 +48,7 @@ export const TX = {
   REWARD_CASHBACK:              { code: 10026, label: 'Reward / Cashback' },
   P2P_RECEIVED:                 { code: 10027, label: 'P2P Received' },
   // Debits
+  INTERNAL_TRANSFER_OUT:        { code: 20021, label: 'Internal Transfer Out' },
   DEBIT_CARD_PURCHASE:          { code: 20001, label: 'Debit Card Purchase' },
   DEBIT_CARD_PURCHASE_ONLINE:   { code: 20002, label: 'Debit Card Purchase - Online' },
   DEBIT_CARD_PURCHASE_RECURRING:{ code: 20003, label: 'Debit Card Purchase - Recurring' },
