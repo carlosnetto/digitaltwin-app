@@ -28,6 +28,10 @@ public class SeedLoader implements CommandLineRunner {
     private final SeedGroupRepository seedGroupRepository;
     private final SeedGroupRegistry seedGroupRegistry;
 
+    // Scanner wrapping System.in must not be closed — closing it closes stdin permanently.
+    @SuppressWarnings("java:S2093")
+    private final java.util.Scanner stdinScanner = new java.util.Scanner(System.in);
+
     @Override
     public void run(String... args) {
         List<Map<String, Object>> activeGroups = seedGroupRepository.findActive();
@@ -59,7 +63,7 @@ public class SeedLoader implements CommandLineRunner {
             } else {
                 // Fallback for IDEs / environments without a real console
                 System.out.printf("%nEnter mnemonic for seed group [%s]: ", label);
-                input = new java.util.Scanner(System.in).nextLine();
+                input = stdinScanner.nextLine();
             }
 
             List<String> words = Arrays.asList(input.trim().split("\\s+"));
