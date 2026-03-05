@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -41,6 +42,20 @@ public class WalletController {
         }
         List<WalletDto> wallets = walletService.getWalletsForUser(user.email());
         return ResponseEntity.ok(wallets);
+    }
+
+    @GetMapping("/api/wallets/rate")
+    public ResponseEntity<?> getRate(@RequestParam String from, @RequestParam String to,
+                                     HttpSession session) {
+        if (session.getAttribute("user") == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
+        }
+        try {
+            java.math.BigDecimal rate = walletService.getRate(from, to);
+            return ResponseEntity.ok(Map.of("rate", rate));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "No rate found for " + from + " → " + to));
+        }
     }
 
     @PostMapping("/api/wallets/convert")

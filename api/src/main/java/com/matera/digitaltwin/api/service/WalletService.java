@@ -8,6 +8,7 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -53,6 +54,16 @@ public class WalletService {
                 """, userId);
 
         return rows.stream().map(this::toDto).toList();
+    }
+
+    public BigDecimal getRate(String fromCode, String toCode) {
+        return jdbc.queryForObject("""
+                SELECT er.rate
+                FROM digitaltwinapp.exchange_rates er
+                JOIN digitaltwinapp.currencies f ON f.id = er.from_currency_id
+                JOIN digitaltwinapp.currencies t ON t.id = er.to_currency_id
+                WHERE f.code = ? AND t.code = ?
+                """, BigDecimal.class, fromCode, toCode);
     }
 
     private WalletDto toDto(Map<String, Object> row) {

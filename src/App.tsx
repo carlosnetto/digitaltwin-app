@@ -614,39 +614,39 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
   const [cryptoAmount, setCryptoAmount] = useState('');
   const [fiatAmount, setFiatAmount] = useState('');
   const [fiatCurrency, setFiatCurrency] = useState<'USD' | 'BRL'>('USD');
+  const [rate, setRate] = useState<number | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const RATE_USD = 1;
-  const RATE_BRL = 5;
+  // Fetch live rate: 1 crypto = X fiat
+  useEffect(() => {
+    setRate(null);
+    fetch(`${import.meta.env.BASE_URL}api/wallets/rate?from=${wallet.currency}&to=${fiatCurrency}`, { credentials: 'include' })
+      .then(r => r.json())
+      .then(d => setRate(Number(d.rate)))
+      .catch(() => {});
+  }, [wallet.currency, fiatCurrency]);
 
   const handleCryptoChange = (val: string) => {
     setCryptoAmount(val);
     const num = parseFloat(val);
-    if (!isNaN(num)) {
-      setFiatAmount((num * (fiatCurrency === 'USD' ? RATE_USD : RATE_BRL)).toString());
-    } else {
-      setFiatAmount('');
-    }
+    if (!isNaN(num) && rate !== null) setFiatAmount((num * rate).toFixed(2));
+    else setFiatAmount('');
   };
 
   const handleFiatChange = (val: string) => {
     setFiatAmount(val);
     const num = parseFloat(val);
-    if (!isNaN(num)) {
-      setCryptoAmount((num / (fiatCurrency === 'USD' ? RATE_USD : RATE_BRL)).toString());
-    } else {
-      setCryptoAmount('');
-    }
+    if (!isNaN(num) && rate !== null) setCryptoAmount((num / rate).toFixed(8));
+    else setCryptoAmount('');
   };
 
   const handleCurrencyChange = (currency: 'USD' | 'BRL') => {
     setFiatCurrency(currency);
-    const num = parseFloat(cryptoAmount);
-    if (!isNaN(num)) {
-      setFiatAmount((num * (currency === 'USD' ? RATE_USD : RATE_BRL)).toString());
-    }
+    // rate will update via useEffect; recalc after new rate arrives
+    setCryptoAmount('');
+    setFiatAmount('');
   };
 
   const handleBuy = async () => {
@@ -742,7 +742,9 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
                 </select>
               </div>
               <p className="text-xs text-matera-muted mt-2 text-right">
-                Exchange Rate: 1 {wallet.currency} = {fiatCurrency === 'USD' ? RATE_USD : RATE_BRL} {fiatCurrency}
+                {rate !== null
+                  ? `Exchange Rate: 1 ${wallet.currency} = ${rate.toFixed(4)} ${fiatCurrency}`
+                  : 'Loading rate…'}
               </p>
             </div>
 
@@ -750,7 +752,7 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
 
             <button
               onClick={handleBuy}
-              disabled={loading || !fiatAmount || parseFloat(fiatAmount) <= 0}
+              disabled={loading || rate === null || !fiatAmount || parseFloat(fiatAmount) <= 0}
               className="w-full bg-matera-green text-matera-blue-dark font-semibold py-4 px-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-matera-green-dark transition-colors mt-2 text-lg shadow-lg"
             >
               {loading ? 'Processing…' : 'Confirm Purchase'}
@@ -767,39 +769,38 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
   const [cryptoAmount, setCryptoAmount] = useState('');
   const [fiatAmount, setFiatAmount] = useState('');
   const [fiatCurrency, setFiatCurrency] = useState<'USD' | 'BRL'>('USD');
+  const [rate, setRate] = useState<number | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const RATE_USD = 1;
-  const RATE_BRL = 5;
+  // Fetch live rate: 1 crypto = X fiat
+  useEffect(() => {
+    setRate(null);
+    fetch(`${import.meta.env.BASE_URL}api/wallets/rate?from=${wallet.currency}&to=${fiatCurrency}`, { credentials: 'include' })
+      .then(r => r.json())
+      .then(d => setRate(Number(d.rate)))
+      .catch(() => {});
+  }, [wallet.currency, fiatCurrency]);
 
   const handleCryptoChange = (val: string) => {
     setCryptoAmount(val);
     const num = parseFloat(val);
-    if (!isNaN(num)) {
-      setFiatAmount((num * (fiatCurrency === 'USD' ? RATE_USD : RATE_BRL)).toString());
-    } else {
-      setFiatAmount('');
-    }
+    if (!isNaN(num) && rate !== null) setFiatAmount((num * rate).toFixed(2));
+    else setFiatAmount('');
   };
 
   const handleFiatChange = (val: string) => {
     setFiatAmount(val);
     const num = parseFloat(val);
-    if (!isNaN(num)) {
-      setCryptoAmount((num / (fiatCurrency === 'USD' ? RATE_USD : RATE_BRL)).toString());
-    } else {
-      setCryptoAmount('');
-    }
+    if (!isNaN(num) && rate !== null) setCryptoAmount((num / rate).toFixed(8));
+    else setCryptoAmount('');
   };
 
   const handleCurrencyChange = (currency: 'USD' | 'BRL') => {
     setFiatCurrency(currency);
-    const num = parseFloat(cryptoAmount);
-    if (!isNaN(num)) {
-      setFiatAmount((num * (currency === 'USD' ? RATE_USD : RATE_BRL)).toString());
-    }
+    setCryptoAmount('');
+    setFiatAmount('');
   };
 
   const handleSell = async () => {
@@ -895,7 +896,9 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
                 </select>
               </div>
               <p className="text-xs text-matera-muted mt-2 text-right">
-                Exchange Rate: 1 {wallet.currency} = {fiatCurrency === 'USD' ? RATE_USD : RATE_BRL} {fiatCurrency}
+                {rate !== null
+                  ? `Exchange Rate: 1 ${wallet.currency} = ${rate.toFixed(4)} ${fiatCurrency}`
+                  : 'Loading rate…'}
               </p>
             </div>
 
@@ -903,7 +906,7 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
 
             <button
               onClick={handleSell}
-              disabled={loading || !cryptoAmount || parseFloat(cryptoAmount) <= 0}
+              disabled={loading || rate === null || !cryptoAmount || parseFloat(cryptoAmount) <= 0}
               className="w-full bg-matera-green text-matera-blue-dark font-semibold py-4 px-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-matera-green-dark transition-colors mt-2 text-lg shadow-lg"
             >
               {loading ? 'Processing…' : 'Confirm Sale'}
