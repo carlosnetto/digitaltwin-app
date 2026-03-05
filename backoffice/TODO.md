@@ -18,6 +18,41 @@
 
 ---
 
+## Provisioning Layer
+
+- [ ] **Transaction confirmation poller** — `transactions` table has SUBMITTED rows that never advance to CONFIRMED.
+  - Add a `@Scheduled` job in `TransactionProvisioningService` (or a new `TransactionConfirmationService`)
+  - Query `SELECT id, tx_hash FROM transactions WHERE status = 'SUBMITTED'`
+  - Call `rpcClient.getTransaction(txHash).join()` — non-null means confirmed on-chain
+  - Update status to CONFIRMED; handle FAILED (transactionError present)
+
+- [ ] **Yellowstone gRPC monitoring** — Replace per-address polling with a single gRPC stream.
+  - Current polling: O(addresses × tokens) RPC calls per 30s — breaks at >1,000 addresses
+  - Target: one `SubscribeRequest` to Helius LaserStream with account filters
+  - In-memory `HashSet<String>` of all managed addresses (~320 MB for 10M × 32 B)
+  - Recovery: `fromSlot` replay if gap <24h; `getSignaturesForAddress` backfill otherwise
+  - See `backoffice/monitoring-architecture.md` for full design
+
+- [ ] **Memo parsing** — `WalletMonitoringService` passes `memo=null` to `persistAndAdvanceCursor`.
+  - Parse the `memo` field from Solana transaction log messages
+  - Useful for correlating incoming payments to orders (payers can embed an order ID)
+
+- [ ] **SOL native transfers in provisioning layer** — `TransactionProvisioningService.send()` only supports SPL tokens.
+  - Add a `sendNative` path for SOL (no token lookup needed, amount in lamports)
+  - Or add a `tokenId = "sol"` sentinel that routes to `SolanaAdaptorImpl.sendNative()`
+
+- [ ] **SeedLoader hardening** — Current `SeedLoader` prompts via `Console`/`Scanner` at startup.
+  - Production alternative: protected HTTP endpoint (e.g. `POST /admin/seed-groups/{id}/load`)
+    accessible only over a localhost-bound interface or VPN
+  - Guard with a one-time-use token or mTLS
+
+- [ ] **ATA creation on send** — `sendToken` fails silently if the recipient has no ATA for the token.
+  - Check `rpcClient.getAccountInfo(recipientAta)` before sending
+  - If null, prepend `createAssociatedTokenAccount` instruction (costs ~0.002 SOL, paid by sender)
+  - Already tracked in the Solana section above; repeating here for provisioning layer context
+
+---
+
 ## Circle (not yet active — `circle.enabled=false`)
 
 All Circle code compiles but is gated behind `circle.enabled=true` in `application.yml`.

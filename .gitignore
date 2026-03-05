@@ -36,3 +36,6 @@ coverage/
 # Spring Boot local config (equivalent of .env — contains secrets, never commit)
 backoffice/application-local.yml
 !backoffice/application-local.yml.example
+
+# SchemaSpy generated ERD output
+backoffice/docs/erd/

@@ -24,9 +24,11 @@ architecture for managing millions of wallets.
 10. [Associated Token Accounts (ATA)](#10-associated-token-accounts)
 11. [REST API Reference](#11-rest-api-reference)
 12. [Interface Hierarchy](#12-interface-hierarchy)
-13. [Large-Scale Wallet Monitoring](#13-large-scale-wallet-monitoring)
-14. [Security Principles](#14-security-principles)
-15. [Running Locally](#15-running-locally)
+13. [Incoming Transaction Monitoring](#13-incoming-transaction-monitoring)
+14. [Database Schema (blockchain_schema)](#14-database-schema)
+15. [Managed Wallet Provisioning Layer](#15-managed-wallet-provisioning-layer)
+16. [Security Principles](#16-security-principles)
+17. [Running Locally](#17-running-locally)
 
 ---
 
@@ -388,26 +390,66 @@ be **created on-chain** before the first deposit.
 
 Base URL: `http://localhost:8080`
 
-### Wallet
+### Managed Wallets (WalletController)
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/solana/wallet` | Generate new random keypair |
+| `POST` | `/api/wallets` | Provision a new HD-derived wallet (idempotent) |
+| `POST` | `/api/wallets/send` | Send SPL tokens from a managed wallet (idempotent) |
+
+**`POST /api/wallets`** — Provision a managed wallet
+
+Request:
+```json
+{ "requestId": "019500ab-...", "blockchainId": "solana" }
+```
+Response:
+```json
+{ "requestId": "019500ab-...", "blockchainId": "solana", "publicAddress": "4Nd1m..." }
+```
+
+`requestId` is a UUIDv7 from the caller. Replaying the same `requestId` returns the same wallet — no duplicate provisioning.
+
+**`POST /api/wallets/send`** — Send tokens from a managed wallet
+
+Request:
+```json
+{
+  "requestId": "019500ac-...",
+  "blockchainId": "solana",
+  "fromPublicAddress": "4Nd1m...",
+  "toAddress": "7XyZ...",
+  "tokenId": "usdc",
+  "amount": 1000000
+}
+```
+`amount` is in the token's smallest unit (USDC: 6 decimals → 1 USDC = 1,000,000).
+
+Response:
+```json
+{
+  "requestId": "019500ac-...",
+  "blockchainId": "solana",
+  "fromPublicAddress": "4Nd1m...",
+  "toAddress": "7XyZ...",
+  "tokenId": "usdc",
+  "amount": 1000000,
+  "status": "submitted",
+  "txHash": "5Kx...",
+  "explorerUrl": "https://solscan.io/tx/5Kx...?cluster=devnet"
+}
+```
+
+### Raw Solana Adaptor (SolanaController)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/solana/wallet` | Generate new random keypair (private key in response — dev only) |
 | `GET` | `/api/solana/wallet/{address}/balance` | Native SOL balance |
 | `GET` | `/api/solana/wallet/{address}/token/{mint}/balance` | SPL token balance |
 | `GET` | `/api/solana/wallet/{address}/history?limit=20` | Transaction history (max 100) |
-
-### Transfers
-
-| Method | Path | Body |
-|---|---|---|
 | `POST` | `/api/solana/send/sol` | `{ fromPrivateKey, toAddress, amount }` |
 | `POST` | `/api/solana/send/token` | `{ fromPrivateKey, toAddress, tokenMint, amount }` |
-
-### Transactions
-
-| Method | Path | Description |
-|---|---|---|
 | `GET` | `/api/solana/tx/{txHash}/status` | `{ txHash, confirmed, explorerUrl }` |
 
 ### Example calls
@@ -481,6 +523,12 @@ BlockchainAdaptor           ← generic: any chain (Ethereum, Base, …)
 StablecoinIssuerAdaptor     ← generic: Circle, Paxos, …
 └── CircleMintAdaptor       ← adds listMints(), getOperationStatus()
     └── CircleMintAdaptorImpl
+
+Provisioning layer (no interface yet — Spring @Services):
+  WalletProvisioningService   ← HD derive + DB persist, idempotent via requestId
+  TransactionProvisioningService ← send token, full PENDING→SUBMITTED lifecycle
+  MonitoringPersistenceService   ← @Transactional: insert received_tx + advance cursor
+  WalletMonitoringService        ← @Scheduled polling loop
 ```
 
 Adding a new chain (e.g. Ethereum): implement `BlockchainAdaptor` + a new `@Service`.
@@ -489,10 +537,34 @@ own controller — no changes to existing code required.
 
 ---
 
-## 13. Large-Scale Wallet Monitoring
+## 13. Incoming Transaction Monitoring
+
+### MVP: Per-address polling (implemented)
+
+`WalletMonitoringService` runs on a `@Scheduled` fixed delay (default 30 s).
+For each blockchain → each managed address → each supported token, it calls
+`SolanaAdaptor.getTokenTransactionHistory()` and filters for new incoming credits.
+
+```
+@Scheduled(fixedDelayString = "${monitoring.poll-interval-ms:30000}")
+void poll()
+  → for each blockchain cursor in monitoring_cursors
+      → for each address in wallets
+          → for each token in tokens
+              → getTokenTransactionHistory(address, mint, limit=50)
+              → filter: status=confirmed, toAddress ∈ managedAddresses, amount > 0
+              → MonitoringPersistenceService.persistAndAdvanceCursor()  ← @Transactional
+```
+
+Persistence is atomic: `INSERT INTO received_transactions ... ON CONFLICT (tx_hash) DO NOTHING`
++ `UPDATE monitoring_cursors SET last_tx_hash = ?` in the same DB transaction.
+
+**Limitation:** O(addresses × tokens) RPC calls per poll. Acceptable for hundreds of
+wallets; does not scale past ~1,000 addresses without hitting RPC rate limits.
+
+### Upgrade path: Yellowstone gRPC (not yet implemented)
 
 > Relevant when managing 1,000,000–10,000,000 user wallets under a single Master Seed.
-> **Not yet implemented** — this section documents the agreed architecture.
 
 ### Problem
 
@@ -585,7 +657,111 @@ Backup:    $5/mo VPS (geographically separate)
 
 ---
 
-## 14. Security Principles
+## 14. Database Schema
+
+All managed wallet state lives in `blockchain_schema` in PostgreSQL (Docker container
+`global_banking_db`, database `banking_system`). Liquibase manages migrations from
+`src/main/resources/db/changelog/changes/`.
+
+Credentials are in `src/main/resources/application-local.yml` (gitignored).
+Active schema is set by `spring.liquibase.default-schema: blockchain_schema` in `application.yml`.
+
+### Tables
+
+| Table | Key columns | Notes |
+|---|---|---|
+| `blockchains` | `id` (varchar PK), `name`, `network` | Seed: `solana` / devnet |
+| `seed_groups` | `id` (uuid PK), `label`, `active`, `next_derivation_index` | One row per 12-word set |
+| `wallets` | `id` (uuid PK), `seed_group_id`, `blockchain_id`, `derivation_index`, `public_address` | UNIQUE(seed_group_id, derivation_index, blockchain_id) |
+| `wallet_creation_requests` | `id` (uuid PK), `request_id`, `blockchain_id`, `status` | UNIQUE(request_id, blockchain_id) for idempotency |
+| `tokens` | PK(id, blockchain_id), `mint_address`, `decimals` | Seeds: usdc + usdt on solana |
+| `transactions` | `id` (UUIDv7), `wallet_id`, `to_address`, `amount`, `token_mint`, `status`, `tx_hash` | PENDING → SUBMITTED → CONFIRMED/FAILED; UNIQUE(request_id) |
+| `received_transactions` | `id` (UUIDv7), `tx_hash`, `to_address`, `token_id`, `amount`, `blockchain_confirmed_at` | UNIQUE(tx_hash) — deduplication key |
+| `monitoring_cursors` | PK `blockchain_id`, `last_tx_hash` | One row per chain; advanced atomically with each insert |
+
+### Migration files
+
+```
+001-create-schema.sql           — CREATE SCHEMA blockchain_schema
+002-create-tables.sql           — blockchains, seed_groups, wallets
+003-rename-schema.sql           — solana_schema → blockchain_schema
+004-create-transactions.sql     — set_updated_at() trigger + transactions table (splitStatements:false)
+005-alter-seed-groups.sql       — active + next_derivation_index columns
+006-create-wallet-creation-requests.sql
+007-create-tokens.sql           — tokens + seed USDC/USDT
+008-create-received-transactions.sql
+009-create-monitoring-cursors.sql — cursor table + seed row for solana
+```
+
+> **Liquibase tip:** PL/pgSQL `$` blocks must use `splitStatements:false` in the
+> changeset pragma or Liquibase will split on internal semicolons and fail.
+
+---
+
+## 15. Managed Wallet Provisioning Layer
+
+Sits between the REST controllers and `SolanaAdaptorImpl`. All calls are in-process
+(no HTTP between Java classes in the same JVM).
+
+### Wallet creation flow
+
+```
+POST /api/wallets
+  → WalletProvisioningService.createWallet(requestId, blockchainId)
+      1. Check wallet_creation_requests for existing requestId (idempotency)
+      2. INSERT INTO wallet_creation_requests (status=PENDING)
+      3. SeedGroupRepository.claimNextIndex()
+         UPDATE seed_groups SET next_derivation_index = next_derivation_index + 1
+         WHERE active = true RETURNING id, label, next_derivation_index - 1 AS claimed_index
+         — atomic; no SELECT MAX() race condition
+      4. SeedGroupRegistry.getMnemonic(seedGroupId)  ← RAM only, never persisted
+      5. SolanaAdaptorImpl.deriveAddress(mnemonic, claimedIndex)
+      6. WalletRepository.insert(seedGroupId, blockchainId, index, publicAddress)
+      7. markFulfilled(requestId, seedGroupId, index, publicAddress)
+```
+
+### Token send flow
+
+```
+POST /api/wallets/send
+  → TransactionProvisioningService.send(requestId, ...)
+      1. TransactionRepository.findByRequestId(requestId) — return early if duplicate
+      2. WalletRepository.findByAddress(fromPublicAddress, blockchainId) — get wallet_id
+      3. TokenRepository.find(tokenId, blockchainId) — get mint_address + decimals
+      4. TransactionRepository.insertPending(UUIDv7, wallet_id, to_address, amount, mint)
+      5. SeedGroupRegistry.getMnemonic(seedGroupId)
+      6. SolanaAdaptorImpl.deriveAddress(mnemonic, derivationIndex) — re-derive signer
+      7. SolanaAdaptorImpl.sendToken(signer, toAddress, mintAddress, amount)
+      8. TransactionRepository.markSubmitted(id, txHash)
+         — on exception: markFailed(id, errorMessage)
+```
+
+### Key classes
+
+| Class | Package | Role |
+|---|---|---|
+| `SeedGroupRegistry` | service | `ConcurrentHashMap<UUID, String>` — mnemonics in RAM only |
+| `SeedLoader` | startup | `CommandLineRunner` — prompts operator for mnemonics at startup via Console |
+| `WalletProvisioningService` | service | `@Transactional` wallet creation |
+| `TransactionProvisioningService` | service | `@Transactional` send lifecycle |
+| `MonitoringPersistenceService` | service | `@Transactional` insert credit + advance cursor |
+| `WalletMonitoringService` | service | `@Scheduled` polling loop |
+| `WalletController` | controller | `POST /api/wallets`, `POST /api/wallets/send` |
+
+### UUIDv7 (monotonic IDs)
+
+All transaction tables use UUIDv7 (time-sortable) via `com.github.f4b6a3:uuid-creator:6.0.0`:
+
+```java
+UUID id = UuidCreator.getTimeOrderedEpoch();   // UUIDv7
+```
+
+Sorting by `id` is equivalent to sorting by insertion time — no separate `created_at`
+index needed for pagination.
+
+---
+
+## 16. Security Principles
 
 | Rule | Why |
 |---|---|
@@ -599,7 +775,7 @@ Backup:    $5/mo VPS (geographically separate)
 
 ---
 
-## 15. Running Locally
+## 17. Running Locally
 
 ```bash
 cd backoffice

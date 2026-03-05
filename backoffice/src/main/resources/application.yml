@@ -1,11 +1,19 @@
 server:
   port: 8080
 
+spring:
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.xml
+    default-schema: blockchain_schema
+
 solana:
   rpc-url: https://api.devnet.solana.com   # switch to mainnet-beta for prod
   usdc-mint: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
   usdt-mint: Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB
   explorer-base-url: https://solscan.io
+
+monitoring:
+  poll-interval-ms: 30000   # how often to poll each address for new incoming txs
 
 circle:
   enabled: false                            # set to true once api-key is configured
