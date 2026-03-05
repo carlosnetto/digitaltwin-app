@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="010-create-exchange-rates" author="digitaltwinapp-api">
+        <sql splitStatements="true">
+            CREATE TABLE digitaltwinapp.exchange_rates (
+                from_currency_id   INTEGER        NOT NULL REFERENCES digitaltwinapp.currencies(id),
+                to_currency_id     INTEGER        NOT NULL REFERENCES digitaltwinapp.currencies(id),
+                rate               NUMERIC(20, 8) NOT NULL,
+                is_stablecoin_pair BOOLEAN        NOT NULL DEFAULT false,
+                last_updated       TIMESTAMP      NOT NULL DEFAULT now(),
+                CONSTRAINT exchange_rates_pkey          PRIMARY KEY (from_currency_id, to_currency_id),
+                CONSTRAINT exchange_rates_no_self_pair  CHECK (from_currency_id != to_currency_id)
+            );
+
+            -- USD=100, BRL=101, USDC=103, USDT=104
+            -- All 12 directional pairs (4 currencies × 3 targets)
+
+            -- USD ↔ BRL  (real rate — daemon will update)
+            INSERT INTO digitaltwinapp.exchange_rates VALUES (100, 101, 5.75000000, false, now());
+            INSERT INTO digitaltwinapp.exchange_rates VALUES (101, 100, 0.17391304, false, now());
+
+            -- USD ↔ USDC  (stablecoin — always 1:1)
+            INSERT INTO digitaltwinapp.exchange_rates VALUES (100, 103, 1.00000000, true,  now());
+            INSERT INTO digitaltwinapp.exchange_rates VALUES (103, 100, 1.00000000, true,  now());
+
+            -- USD ↔ USDT  (stablecoin — always 1:1)
+            INSERT INTO digitaltwinapp.exchange_rates VALUES (100, 104, 1.00000000, true,  now());
+            INSERT INTO digitaltwinapp.exchange_rates VALUES (104, 100, 1.00000000, true,  now());
+
+            -- BRL ↔ USDC  (real rate — same ratio as BRL/USD, daemon will update)
+            INSERT INTO digitaltwinapp.exchange_rates VALUES (101, 103, 0.17391304, false, now());
+            INSERT INTO digitaltwinapp.exchange_rates VALUES (103, 101, 5.75000000, false, now());
+
+            -- BRL ↔ USDT  (real rate — same ratio as BRL/USD, daemon will update)
+            INSERT INTO digitaltwinapp.exchange_rates VALUES (101, 104, 0.17391304, false, now());
+            INSERT INTO digitaltwinapp.exchange_rates VALUES (104, 101, 5.75000000, false, now());
+
+            -- USDC ↔ USDT  (stablecoin — always 1:1)
+            INSERT INTO digitaltwinapp.exchange_rates VALUES (103, 104, 1.00000000, true,  now());
+            INSERT INTO digitaltwinapp.exchange_rates VALUES (104, 103, 1.00000000, true,  now());
+        </sql>
+        <rollback>
+            DROP TABLE IF EXISTS digitaltwinapp.exchange_rates;
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
