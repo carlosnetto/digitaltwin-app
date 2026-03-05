@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="009-seed-liquidity-buffer" author="digitaltwinapp-api">
+        <!--
+            System account — not a real user, cannot log in via Google OAuth.
+            user_id=1 is reserved for system/internal accounts (real users start at 1000).
+            The 60-second provisioning daemon will create the 4 mini-core accounts automatically.
+        -->
+        <insert schemaName="digitaltwinapp" tableName="users">
+            <column name="id"      valueComputed="gen_random_uuid()"/>
+            <column name="email"   value="liquidity-buffer@system"/>
+            <column name="name"    value="Liquidity Buffer"/>
+            <column name="status"  value="active"/>
+            <column name="user_id" valueNumeric="1"/>
+        </insert>
+    </changeSet>
+
+</databaseChangeLog>
