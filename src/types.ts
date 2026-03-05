@@ -35,9 +35,9 @@ export interface Transaction {
 // Transaction codes from mini-core (005-seed-data.xml)
 // Credits: 10xxx | Debits: 20xxx | Fees: 30xxx
 export const TX = {
-  // Crypto conversions — user side (buy)
+  // Crypto operations — credits (40xxx)
+  CRYPTO_CONVERSION_RECEIVED:   { code: 40002, label: 'Crypto Conversion Received' },
   CRYPTO_PURCHASE:              { code: 40003, label: 'Crypto Purchase' },
-  // Crypto conversions — user side (sell)
   CRYPTO_SALE_PROCEEDS:         { code: 40005, label: 'Crypto Sale Proceeds' },
   // Internal transfers — liquidity pool side of conversions
   INTERNAL_TRANSFER_IN:         { code: 10018, label: 'Internal Transfer In' },
@@ -53,8 +53,9 @@ export const TX = {
   P2P_RECEIVED:                 { code: 10027, label: 'P2P Received' },
   // Debits
   INTERNAL_TRANSFER_OUT:        { code: 20021, label: 'Internal Transfer Out' },
-  CRYPTO_PURCHASE_PAYMENT:      { code: 50005, label: 'Crypto Purchase Payment' },
+  CRYPTO_CONVERSION_SENT:       { code: 50002, label: 'Crypto Conversion Sent' },
   CRYPTO_SALE:                  { code: 50003, label: 'Crypto Sale' },
+  CRYPTO_PURCHASE_PAYMENT:      { code: 50005, label: 'Crypto Purchase Payment' },
   DEBIT_CARD_PURCHASE:          { code: 20001, label: 'Debit Card Purchase' },
   DEBIT_CARD_PURCHASE_ONLINE:   { code: 20002, label: 'Debit Card Purchase - Online' },
   DEBIT_CARD_PURCHASE_RECURRING:{ code: 20003, label: 'Debit Card Purchase - Recurring' },

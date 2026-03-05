@@ -14,17 +14,25 @@ import java.util.Map;
 /**
  * Executes a currency conversion between two of the user's wallets.
  *
- * Flow (buy USDC with USD example):
- *   1. Debit  user's  fromCurrency (fiat)   account — 50005 Crypto Purchase Payment
- *   2. Credit user's  toCurrency   (crypto) account — 40003 Crypto Purchase
- *   3. Credit pool's  fromCurrency account            — 10018 Internal Transfer In
- *   4. Debit  pool's  toCurrency   account            — 20021 Internal Transfer Out
+ * Supports three operation types, detected from is_fiat flags:
  *
- * Flow (sell USDC for USD example):
- *   1. Debit  user's  fromCurrency (crypto) account — 50003 Crypto Sale
- *   2. Credit user's  toCurrency   (fiat)   account — 40005 Crypto Sale Proceeds
- *   3. Credit pool's  fromCurrency account            — 10018 Internal Transfer In
- *   4. Debit  pool's  toCurrency   account            — 20021 Internal Transfer Out
+ * BUY  (fiat → crypto, e.g. USD → USDC):
+ *   1. Debit  user's  fiat   account — 50005 Crypto Purchase Payment
+ *   2. Credit user's  crypto account — 40003 Crypto Purchase
+ *   3. Credit pool's  fiat   account — 10018 Internal Transfer In
+ *   4. Debit  pool's  crypto account — 20021 Internal Transfer Out
+ *
+ * SELL (crypto → fiat, e.g. USDC → USD):
+ *   1. Debit  user's  crypto account — 50003 Crypto Sale
+ *   2. Credit user's  fiat   account — 40005 Crypto Sale Proceeds
+ *   3. Credit pool's  crypto account — 10018 Internal Transfer In
+ *   4. Debit  pool's  fiat   account — 20021 Internal Transfer Out
+ *
+ * CONVERT (crypto → crypto, e.g. USDC → USDT):
+ *   1. Debit  user's  from-crypto account — 50002 Crypto Conversion Sent
+ *   2. Credit user's  to-crypto   account — 40002 Crypto Conversion Received
+ *   3. Credit pool's  from-crypto account — 10018 Internal Transfer In
+ *   4. Debit  pool's  to-crypto   account — 20021 Internal Transfer Out
  *
  * The pool is the Liquidity Buffer account (user_id = 1).
  */
@@ -33,13 +41,17 @@ public class ConversionService {
 
     private static final Logger log = LoggerFactory.getLogger(ConversionService.class);
 
-    // User side — buy crypto
-    private static final int TX_BUY_FIAT_DEBIT   = 50005; // Crypto Purchase Payment (fiat goes out)
-    private static final int TX_BUY_CRYPTO_CREDIT = 40003; // Crypto Purchase         (crypto comes in)
+    // User side — buy crypto (fiat → crypto)
+    private static final int TX_BUY_FIAT_DEBIT        = 50005; // Crypto Purchase Payment (fiat goes out)
+    private static final int TX_BUY_CRYPTO_CREDIT      = 40003; // Crypto Purchase         (crypto comes in)
 
-    // User side — sell crypto
-    private static final int TX_SELL_CRYPTO_DEBIT = 50003; // Crypto Sale             (crypto goes out)
-    private static final int TX_SELL_FIAT_CREDIT  = 40005; // Crypto Sale Proceeds    (fiat comes in)
+    // User side — sell crypto (crypto → fiat)
+    private static final int TX_SELL_CRYPTO_DEBIT      = 50003; // Crypto Sale             (crypto goes out)
+    private static final int TX_SELL_FIAT_CREDIT       = 40005; // Crypto Sale Proceeds    (fiat comes in)
+
+    // User side — convert crypto (crypto → crypto)
+    private static final int TX_CONVERT_CRYPTO_DEBIT   = 50002; // Crypto Conversion Sent     (crypto goes out)
+    private static final int TX_CONVERT_CRYPTO_CREDIT  = 40002; // Crypto Conversion Received (crypto comes in)
 
     // Pool side (same regardless of direction)
     private static final int TX_CODE_POOL_CREDIT  = 10018; // Internal Transfer In
@@ -75,11 +87,25 @@ public class ConversionService {
         int fromCurrencyId = ((Number) fromCcy.get("id")).intValue();
         int toCurrencyId   = ((Number) toCcy.get("id")).intValue();
 
-        // Determine direction: buying crypto = toCurrency is not fiat
-        boolean buyingCrypto = !Boolean.TRUE.equals(toCcy.get("is_fiat"));
+        // Determine operation type from is_fiat flags
+        boolean fromIsFiat = Boolean.TRUE.equals(fromCcy.get("is_fiat"));
+        boolean toIsFiat   = Boolean.TRUE.equals(toCcy.get("is_fiat"));
 
-        int userDebitCode  = buyingCrypto ? TX_BUY_FIAT_DEBIT   : TX_SELL_CRYPTO_DEBIT;
-        int userCreditCode = buyingCrypto ? TX_BUY_CRYPTO_CREDIT : TX_SELL_FIAT_CREDIT;
+        int userDebitCode;
+        int userCreditCode;
+        if (!fromIsFiat && !toIsFiat) {
+            // crypto → crypto conversion
+            userDebitCode  = TX_CONVERT_CRYPTO_DEBIT;
+            userCreditCode = TX_CONVERT_CRYPTO_CREDIT;
+        } else if (fromIsFiat) {
+            // fiat → crypto (buy)
+            userDebitCode  = TX_BUY_FIAT_DEBIT;
+            userCreditCode = TX_BUY_CRYPTO_CREDIT;
+        } else {
+            // crypto → fiat (sell)
+            userDebitCode  = TX_SELL_CRYPTO_DEBIT;
+            userCreditCode = TX_SELL_FIAT_CREDIT;
+        }
 
         // ── 3. Look up exchange rate ───────────────────────────────────────
         BigDecimal rate = jdbc.queryForObject(
