@@ -12,5 +12,6 @@
     <include file="db/changelog/005-create-currencies.xml"/>
     <include file="db/changelog/006-create-user-accounts.xml"/>
     <include file="db/changelog/007-user-created-notify-trigger.xml"/>
+    <include file="db/changelog/008-currencies-add-is-fiat-logo.xml"/>
 
 </databaseChangeLog>

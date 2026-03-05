@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="008-currencies-add-is-fiat-logo" author="digitaltwinapp-api">
+        <sql splitStatements="true">
+            ALTER TABLE digitaltwinapp.currencies ADD COLUMN is_fiat  BOOLEAN      NOT NULL DEFAULT false;
+            ALTER TABLE digitaltwinapp.currencies ADD COLUMN logo_url VARCHAR(200);
+
+            UPDATE digitaltwinapp.currencies SET is_fiat = true  WHERE code IN ('USD', 'BRL');
+            UPDATE digitaltwinapp.currencies SET logo_url = 'assets/Circle_USDC_Logo.svg.png' WHERE code = 'USDC';
+            UPDATE digitaltwinapp.currencies SET logo_url = 'assets/tether-usdt-logo.svg'     WHERE code = 'USDT';
+        </sql>
+        <rollback>
+            ALTER TABLE digitaltwinapp.currencies DROP COLUMN is_fiat;
+            ALTER TABLE digitaltwinapp.currencies DROP COLUMN logo_url;
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

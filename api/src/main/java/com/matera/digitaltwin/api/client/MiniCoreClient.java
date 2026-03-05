@@ -20,6 +20,24 @@ public class MiniCoreClient {
     private final RestClient restClient = RestClient.create();
 
     /**
+     * Fetches an account from mini-core by its account_id.
+     *
+     * @return the account map (contains available_balance, etc.), or null if the call failed
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getAccount(long accountId) {
+        try {
+            return restClient.get()
+                    .uri(baseUrl + "/api/accounts/" + accountId)
+                    .retrieve()
+                    .body(Map.class);
+        } catch (Exception e) {
+            log.warn("mini-core getAccount failed for account_id={}: {}", accountId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * Creates an account in mini-core.
      *
      * @return the minicore account_id, or -1 if the call failed

@@ -7,6 +7,7 @@ export interface Wallet {
   symbol: string;
   type: CurrencyType;
   balance: number;
+  logoUrl?: string | null;   // relative asset path for crypto; null/undefined for fiat
   receiveDetails: Record<string, ReceiveDetailInfo> | null;
   networks?: string[]; // For crypto
 }

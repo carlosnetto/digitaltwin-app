@@ -15,21 +15,12 @@ function Toast({ message, visible }: { message: string, visible: boolean }) {
   );
 }
 
-function CurrencyIcon({ currency, symbol }: { currency: string, symbol: string }) {
-  if (currency === 'USDC') {
+function CurrencyIcon({ currency, symbol, logoUrl }: { currency: string, symbol: string, logoUrl?: string | null }) {
+  if (logoUrl) {
     return (
       <img
-        src={`${import.meta.env.BASE_URL}assets/Circle_USDC_Logo.svg.png`}
-        alt="USDC"
-        className="w-full h-full object-cover"
-      />
-    );
-  }
-  if (currency === 'USDT') {
-    return (
-      <img
-        src={`${import.meta.env.BASE_URL}assets/tether-usdt-logo.svg`}
-        alt="USDT"
+        src={`${import.meta.env.BASE_URL}${logoUrl}`}
+        alt={currency}
         className="w-full h-full object-cover"
       />
     );
@@ -154,7 +145,7 @@ function Dashboard() {
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden border border-white/10 shrink-0">
                         <div className="w-full h-full object-cover rounded-full">
-                          <CurrencyIcon currency={wallet.currency} symbol={wallet.symbol} />
+                          <CurrencyIcon currency={wallet.currency} symbol={wallet.symbol} logoUrl={wallet.logoUrl} />
                         </div>
                       </div>
                       <div>
