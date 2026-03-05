@@ -186,7 +186,7 @@ function Dashboard() {
                     >
                       <ArrowUp className="shrink-0" size={16} /> <span className="truncate">Send</span>
                     </button>
-                    {wallet.type === 'crypto' && (
+                    {wallet.type === 'crypto' ? (
                       <>
                         <button
                           onClick={() => { setSelectedWallet(wallet); setActionType('buy'); }}
@@ -207,6 +207,13 @@ function Dashboard() {
                           <Repeat className="shrink-0" size={16} /> <span className="truncate">Convert</span>
                         </button>
                       </>
+                    ) : (
+                      <button
+                        onClick={() => { setSelectedWallet(wallet); setActionType('convert'); }}
+                        className="flex-1 bg-white/10 text-white font-semibold py-2 px-1 sm:px-2 rounded-xl flex items-center justify-center gap-1 sm:gap-2 hover:bg-white/20 transition-colors border border-white/10 text-xs sm:text-sm"
+                      >
+                        <Repeat className="shrink-0" size={16} /> <span className="truncate">Convert</span>
+                      </button>
                     )}
                   </div>
                 </div>
@@ -312,8 +319,8 @@ function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Only other crypto wallets are valid conversion targets
-  const targetOptions = wallets.filter(w => w.type === 'crypto' && w.id !== wallet.id);
+  // Target options are the same type as the source wallet (crypto↔crypto or fiat↔fiat)
+  const targetOptions = wallets.filter(w => w.type === wallet.type && w.id !== wallet.id);
   const [targetWalletId, setTargetWalletId] = useState(targetOptions[0]?.id || '');
 
   const targetWallet = wallets.find(w => w.id === targetWalletId);
