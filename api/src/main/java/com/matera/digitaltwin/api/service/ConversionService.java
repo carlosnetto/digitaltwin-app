@@ -88,14 +88,16 @@ public class ConversionService {
                 Long.class, email);
         if (userId == null) throw new IllegalArgumentException("User not found: " + email);
 
-        // ── 2. Resolve currency IDs + is_fiat ─────────────────────────────
+        // ── 2. Resolve currency IDs + is_fiat + decimal_places ────────────
         Map<String, Object> fromCcy = jdbc.queryForMap(
-                "SELECT id, is_fiat FROM digitaltwinapp.currencies WHERE code = ?", fromCurrencyCode);
+                "SELECT id, is_fiat, decimal_places FROM digitaltwinapp.currencies WHERE code = ?", fromCurrencyCode);
         Map<String, Object> toCcy = jdbc.queryForMap(
-                "SELECT id, is_fiat FROM digitaltwinapp.currencies WHERE code = ?", toCurrencyCode);
+                "SELECT id, is_fiat, decimal_places FROM digitaltwinapp.currencies WHERE code = ?", toCurrencyCode);
 
-        int fromCurrencyId = ((Number) fromCcy.get("id")).intValue();
-        int toCurrencyId   = ((Number) toCcy.get("id")).intValue();
+        int fromCurrencyId   = ((Number) fromCcy.get("id")).intValue();
+        int toCurrencyId     = ((Number) toCcy.get("id")).intValue();
+        int fromDecimalPlaces = ((Number) fromCcy.get("decimal_places")).intValue();
+        int toDecimalPlaces   = ((Number) toCcy.get("decimal_places")).intValue();
 
         // Determine operation type from is_fiat flags
         boolean fromIsFiat = Boolean.TRUE.equals(fromCcy.get("is_fiat"));
@@ -129,8 +131,9 @@ public class ConversionService {
             throw new IllegalStateException("No exchange rate for " + fromCurrencyCode + " → " + toCurrencyCode);
         }
 
-        BigDecimal fromAmountBD = BigDecimal.valueOf(fromAmount).setScale(8, RoundingMode.HALF_UP);
-        BigDecimal toAmountBD   = fromAmountBD.multiply(rate).setScale(8, RoundingMode.HALF_UP);
+        // Truncate to each currency's declared decimal precision (DOWN = truncate, never round up)
+        BigDecimal fromAmountBD = BigDecimal.valueOf(fromAmount).setScale(fromDecimalPlaces, RoundingMode.DOWN);
+        BigDecimal toAmountBD   = fromAmountBD.multiply(rate).setScale(toDecimalPlaces, RoundingMode.DOWN);
         double toAmount = toAmountBD.doubleValue();
 
         // ── 4. Resolve mini-core account IDs ──────────────────────────────
