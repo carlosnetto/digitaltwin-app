@@ -1,6 +1,0 @@
-/Users/cnetto/Git/digitaltwin-app/api/src/main/java/com/matera/digitaltwin/api/ApiApplication.java
-/Users/cnetto/Git/digitaltwin-app/api/src/main/java/com/matera/digitaltwin/api/config/WebConfig.java
-/Users/cnetto/Git/digitaltwin-app/api/src/main/java/com/matera/digitaltwin/api/controller/AuthController.java
-/Users/cnetto/Git/digitaltwin-app/api/src/main/java/com/matera/digitaltwin/api/exception/ApiExceptionHandler.java
-/Users/cnetto/Git/digitaltwin-app/api/src/main/java/com/matera/digitaltwin/api/model/UserInfo.java
-/Users/cnetto/Git/digitaltwin-app/api/src/main/java/com/matera/digitaltwin/api/service/GoogleAuthService.java

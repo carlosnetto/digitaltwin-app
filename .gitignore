@@ -44,3 +44,6 @@ api/src/main/resources/application-local.yml
 
 # SchemaSpy generated ERD output
 backoffice/docs/erd/
+
+# Maven build output
+**/target/

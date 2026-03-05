@@ -1,9 +1,0 @@
-spring:
-  datasource:
-    username: admin
-    password: mysecretpassword
-
-app:
-  # Add the Cloudflare tunnel origin when running, e.g.:
-  # allowed-origins: http://localhost:3000,https://your-tunnel.trycloudflare.com
-  allowed-origins: http://localhost:3000,https://materalabs.us
