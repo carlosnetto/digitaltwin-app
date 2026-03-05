@@ -324,25 +324,35 @@ function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => 
   const [targetWalletId, setTargetWalletId] = useState(targetOptions[0]?.id || '');
 
   const targetWallet = wallets.find(w => w.id === targetWalletId);
-  // USDC↔USDT is a stablecoin pair — rate is 1:1; display 1 as placeholder
-  const DISPLAY_RATE = 1;
+  const [rate, setRate] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!targetWallet) return;
+    setRate(null);
+    fetch(`${import.meta.env.BASE_URL}api/wallets/rate?from=${wallet.currency}&to=${targetWallet.currency}`, { credentials: 'include' })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(d => { const v = Number(d.rate); if (!isNaN(v)) setRate(v); })
+      .catch(() => {});
+  }, [wallet.currency, targetWallet?.currency]);
 
   const handleSourceChange = (val: string) => {
     setSourceAmount(val);
     const num = parseFloat(val);
-    setTargetAmount(!isNaN(num) ? (num * DISPLAY_RATE).toString() : '');
+    if (!isNaN(num) && rate !== null) setTargetAmount((num * rate).toFixed(8));
+    else setTargetAmount('');
   };
 
   const handleTargetChange = (val: string) => {
     setTargetAmount(val);
     const num = parseFloat(val);
-    setSourceAmount(!isNaN(num) ? (num / DISPLAY_RATE).toString() : '');
+    if (!isNaN(num) && rate !== null) setSourceAmount((num / rate).toFixed(8));
+    else setSourceAmount('');
   };
 
   const handleTargetWalletChange = (val: string) => {
     setTargetWalletId(val);
-    const num = parseFloat(sourceAmount);
-    if (!isNaN(num)) setTargetAmount((num * DISPLAY_RATE).toString());
+    setSourceAmount('');
+    setTargetAmount('');
   };
 
   const handleConvert = async () => {
@@ -440,7 +450,9 @@ function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => 
                 </select>
               </div>
               <p className="text-xs text-matera-muted mt-2 text-right">
-                Exchange Rate: 1 {wallet.currency} = {DISPLAY_RATE} {targetWallet?.currency}
+                {rate !== null
+                  ? `Exchange Rate: 1 ${wallet.currency} = ${rate.toFixed(4)} ${targetWallet?.currency}`
+                  : 'Loading rate…'}
               </p>
             </div>
 
@@ -451,7 +463,7 @@ function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => 
 
             <button
               onClick={handleConvert}
-              disabled={loading || !sourceAmount || parseFloat(sourceAmount) <= 0 || parseFloat(sourceAmount) > wallet.balance}
+              disabled={loading || rate === null || !sourceAmount || parseFloat(sourceAmount) <= 0 || parseFloat(sourceAmount) > wallet.balance}
               className="w-full bg-matera-green text-matera-blue-dark font-semibold py-4 px-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-matera-green-dark transition-colors mt-2 text-lg shadow-lg"
             >
               {loading ? 'Processing…' : 'Confirm Conversion'}

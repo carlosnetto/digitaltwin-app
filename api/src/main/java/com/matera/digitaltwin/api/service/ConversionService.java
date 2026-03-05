@@ -34,6 +34,12 @@ import java.util.Map;
  *   3. Credit pool's  from-crypto account — 10018 Internal Transfer In
  *   4. Debit  pool's  to-crypto   account — 20021 Internal Transfer Out
  *
+ * CONVERT (fiat → fiat, e.g. BRL → USD):
+ *   1. Debit  user's  from-fiat account — 50006 Currency Conversion Out
+ *   2. Credit user's  to-fiat   account — 40006 Currency Conversion In
+ *   3. Credit pool's  from-fiat account — 10018 Internal Transfer In
+ *   4. Debit  pool's  to-fiat   account — 20021 Internal Transfer Out
+ *
  * The pool is the Liquidity Buffer account (user_id = 1).
  */
 @Service
@@ -52,6 +58,10 @@ public class ConversionService {
     // User side — convert crypto (crypto → crypto)
     private static final int TX_CONVERT_CRYPTO_DEBIT   = 50002; // Crypto Conversion Sent     (crypto goes out)
     private static final int TX_CONVERT_CRYPTO_CREDIT  = 40002; // Crypto Conversion Received (crypto comes in)
+
+    // User side — convert fiat (fiat → fiat)
+    private static final int TX_CONVERT_FIAT_DEBIT     = 50006; // Currency Conversion Out    (fiat goes out)
+    private static final int TX_CONVERT_FIAT_CREDIT    = 40006; // Currency Conversion In     (fiat comes in)
 
     // Pool side (same regardless of direction)
     private static final int TX_CODE_POOL_CREDIT  = 10018; // Internal Transfer In
@@ -93,7 +103,11 @@ public class ConversionService {
 
         int userDebitCode;
         int userCreditCode;
-        if (!fromIsFiat && !toIsFiat) {
+        if (fromIsFiat && toIsFiat) {
+            // fiat → fiat conversion
+            userDebitCode  = TX_CONVERT_FIAT_DEBIT;
+            userCreditCode = TX_CONVERT_FIAT_CREDIT;
+        } else if (!fromIsFiat && !toIsFiat) {
             // crypto → crypto conversion
             userDebitCode  = TX_CONVERT_CRYPTO_DEBIT;
             userCreditCode = TX_CONVERT_CRYPTO_CREDIT;
