@@ -15,5 +15,6 @@
     <include file="db/changelog/008-currencies-add-is-fiat-logo.xml"/>
     <include file="db/changelog/009-seed-liquidity-buffer.xml"/>
     <include file="db/changelog/010-create-exchange-rates.xml"/>
+    <include file="db/changelog/011-create-conversions.xml"/>
 
 </databaseChangeLog>

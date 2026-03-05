@@ -7,6 +7,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.util.HashMap;
 import java.util.Map;
 
 @Component
@@ -69,6 +70,50 @@ public class MiniCoreClient {
 
         } catch (Exception e) {
             log.warn("mini-core createAccount failed for account_number={}: {}", accountNumber, e.getMessage());
+            return -1;
+        }
+    }
+
+    /**
+     * Posts a POSTED transaction in mini-core.
+     *
+     * @param direction "CREDIT" or "DEBIT"
+     * @param description optional; stored in json_payload
+     * @return the transaction id, or -1 if the call failed
+     */
+    public long createTransaction(long accountId, int transactionCode, double amount,
+                                  String direction, String description) {
+        var body = new HashMap<String, Object>();
+        body.put("account_id",        accountId);
+        body.put("transaction_code",  transactionCode);
+        body.put("amount",            amount);
+        body.put("direction",         direction);
+        body.put("status",            "POSTED");
+        body.put("created_by",        "digitaltwinapp-api");
+        if (description != null) {
+            body.put("json_payload", Map.of("description", description));
+        }
+
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response = restClient.post()
+                    .uri(baseUrl + "/api/transactions")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(Map.class);
+
+            if (response == null) return -1;
+
+            // mini-core may return the field as transaction_id or id
+            Object txId = response.containsKey("transaction_id")
+                    ? response.get("transaction_id")
+                    : response.get("id");
+            if (txId == null) return -1;
+            return ((Number) txId).longValue();
+
+        } catch (Exception e) {
+            log.warn("mini-core createTransaction failed for account_id={}: {}", accountId, e.getMessage());
             return -1;
         }
     }

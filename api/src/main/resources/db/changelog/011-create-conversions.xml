@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="011-create-conversions" author="digitaltwinapp-api">
+        <sql splitStatements="true">
+            CREATE SEQUENCE digitaltwinapp.conversions_id_seq START 1;
+
+            CREATE TABLE digitaltwinapp.conversions (
+                id                BIGINT         NOT NULL DEFAULT nextval('digitaltwinapp.conversions_id_seq'),
+                created_at        TIMESTAMP      NOT NULL DEFAULT now(),
+                user_id           BIGINT         NOT NULL REFERENCES digitaltwinapp.users(user_id),
+                from_currency_id  INTEGER        NOT NULL REFERENCES digitaltwinapp.currencies(id),
+                to_currency_id    INTEGER        NOT NULL REFERENCES digitaltwinapp.currencies(id),
+                from_amount       NUMERIC(20,8)  NOT NULL,
+                to_amount         NUMERIC(20,8)  NOT NULL,
+                rate              NUMERIC(20,8)  NOT NULL,
+                user_debit_tx_id  BIGINT,
+                user_credit_tx_id BIGINT,
+                pool_credit_tx_id BIGINT,
+                pool_debit_tx_id  BIGINT,
+                CONSTRAINT conversions_pkey     PRIMARY KEY (id),
+                CONSTRAINT conversions_no_loop  CHECK (from_currency_id != to_currency_id)
+            );
+        </sql>
+        <rollback>
+            DROP TABLE  IF EXISTS digitaltwinapp.conversions;
+            DROP SEQUENCE IF EXISTS digitaltwinapp.conversions_id_seq;
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

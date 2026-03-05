@@ -616,17 +616,19 @@ function ReceiveModal({ walletId, onClose }: { walletId: string, onClose: () => 
 }
 
 function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void }) {
-  const { wallets } = useStore();
-  const [usdcAmount, setUsdcAmount] = useState('');
+  const { refreshWallets } = useStore();
+  const [cryptoAmount, setCryptoAmount] = useState('');
   const [fiatAmount, setFiatAmount] = useState('');
   const [fiatCurrency, setFiatCurrency] = useState<'USD' | 'BRL'>('USD');
   const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const RATE_USD = 1;
   const RATE_BRL = 5;
 
-  const handleUsdcChange = (val: string) => {
-    setUsdcAmount(val);
+  const handleCryptoChange = (val: string) => {
+    setCryptoAmount(val);
     const num = parseFloat(val);
     if (!isNaN(num)) {
       setFiatAmount((num * (fiatCurrency === 'USD' ? RATE_USD : RATE_BRL)).toString());
@@ -639,23 +641,45 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
     setFiatAmount(val);
     const num = parseFloat(val);
     if (!isNaN(num)) {
-      setUsdcAmount((num / (fiatCurrency === 'USD' ? RATE_USD : RATE_BRL)).toString());
+      setCryptoAmount((num / (fiatCurrency === 'USD' ? RATE_USD : RATE_BRL)).toString());
     } else {
-      setUsdcAmount('');
+      setCryptoAmount('');
     }
   };
 
   const handleCurrencyChange = (currency: 'USD' | 'BRL') => {
     setFiatCurrency(currency);
-    const num = parseFloat(usdcAmount);
+    const num = parseFloat(cryptoAmount);
     if (!isNaN(num)) {
       setFiatAmount((num * (currency === 'USD' ? RATE_USD : RATE_BRL)).toString());
     }
   };
 
-  const handleBuy = () => {
-    setSuccess(true);
-    setTimeout(onClose, 2000);
+  const handleBuy = async () => {
+    const fromAmount = parseFloat(fiatAmount);
+    if (isNaN(fromAmount) || fromAmount <= 0) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/wallets/convert`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromCurrencyCode: fiatCurrency, toCurrencyCode: wallet.currency, fromAmount }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: 'Request failed' }));
+        setError(body.error ?? 'Conversion failed');
+        return;
+      }
+      setSuccess(true);
+      await refreshWallets();
+      setTimeout(onClose, 2000);
+    } catch {
+      setError('Network error — please try again');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (success) {
@@ -685,8 +709,8 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
               <div className="relative">
                 <input
                   type="number"
-                  value={usdcAmount}
-                  onChange={(e) => handleUsdcChange(e.target.value)}
+                  value={cryptoAmount}
+                  onChange={(e) => handleCryptoChange(e.target.value)}
                   placeholder="0.00"
                   className="w-full bg-matera-bg border border-white/10 rounded-xl py-4 pl-4 pr-16 text-2xl font-semibold text-white focus:outline-none focus:border-matera-green"
                 />
@@ -728,12 +752,14 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
               </p>
             </div>
 
+            {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+
             <button
               onClick={handleBuy}
-              disabled={!usdcAmount || parseFloat(usdcAmount) <= 0}
+              disabled={loading || !fiatAmount || parseFloat(fiatAmount) <= 0}
               className="w-full bg-matera-green text-matera-blue-dark font-semibold py-4 px-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-matera-green-dark transition-colors mt-2 text-lg shadow-lg"
             >
-              Confirm Purchase
+              {loading ? 'Processing…' : 'Confirm Purchase'}
             </button>
           </div>
         </div>
@@ -743,11 +769,13 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
 }
 
 function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void }) {
-  const { wallets } = useStore();
+  const { refreshWallets } = useStore();
   const [cryptoAmount, setCryptoAmount] = useState('');
   const [fiatAmount, setFiatAmount] = useState('');
   const [fiatCurrency, setFiatCurrency] = useState<'USD' | 'BRL'>('USD');
   const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const RATE_USD = 1;
   const RATE_BRL = 5;
@@ -780,9 +808,31 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
     }
   };
 
-  const handleSell = () => {
-    setSuccess(true);
-    setTimeout(onClose, 2000);
+  const handleSell = async () => {
+    const fromAmount = parseFloat(cryptoAmount);
+    if (isNaN(fromAmount) || fromAmount <= 0) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/wallets/convert`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromCurrencyCode: wallet.currency, toCurrencyCode: fiatCurrency, fromAmount }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: 'Request failed' }));
+        setError(body.error ?? 'Conversion failed');
+        return;
+      }
+      setSuccess(true);
+      await refreshWallets();
+      setTimeout(onClose, 2000);
+    } catch {
+      setError('Network error — please try again');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (success) {
@@ -855,12 +905,14 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
               </p>
             </div>
 
+            {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+
             <button
               onClick={handleSell}
-              disabled={!cryptoAmount || parseFloat(cryptoAmount) <= 0}
+              disabled={loading || !cryptoAmount || parseFloat(cryptoAmount) <= 0}
               className="w-full bg-matera-green text-matera-blue-dark font-semibold py-4 px-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-matera-green-dark transition-colors mt-2 text-lg shadow-lg"
             >
-              Confirm Sale
+              {loading ? 'Processing…' : 'Confirm Sale'}
             </button>
           </div>
         </div>
