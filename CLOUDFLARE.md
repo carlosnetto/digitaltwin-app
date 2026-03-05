@@ -2,14 +2,14 @@
 
 ## Architecture
 
-Static SPA served via Cloudflare Workers under a sub-path. No backend, no tunnel.
+SPA + Java API served via Cloudflare Workers + Tunnel under a sub-path.
 
 ```
 User → materalabs.us/digitaltwin-app/*
          → Worker: digitaltwin-app
-         → strips /digitaltwin-app prefix
-         → serves static assets from dist/
-         → SPA fallback: 404 → index.html
+         ├─ /digitaltwin-app/api/* → strip prefix → proxy to tunnel
+         │       → digitaltwinapp-api.materalabs.us → cloudflared → localhost:8081 → Java API
+         └─ /digitaltwin-app/*    → strip prefix → static assets (dist/) + SPA fallback
 ```
 
 ## Account
@@ -20,7 +20,8 @@ User → materalabs.us/digitaltwin-app/*
 | Worker `digitaltwin-app` | Tic.cloud@matera.com | `45281eba1857e04d45fe46d31bdc2f0b` |
 | Route `materalabs.us/digitaltwin-app/*` | Tic.cloud@matera.com | `45281eba1857e04d45fe46d31bdc2f0b` |
 
-No tunnel — the app is a pure SPA with no backend to proxy.
+| Tunnel `digitaltwinapp-api` | Tic.cloud@matera.com | UUID: `dcb4ed6a-a0c0-451a-9e1b-e8c2803f81de` |
+| DNS `digitaltwinapp-api.materalabs.us` | CNAME → tunnel | stable hostname for `API_ORIGIN` secret |
 
 ### Wrangler Login
 
@@ -37,13 +38,28 @@ npx wrangler login    # re-authenticate if needed
 npm run deploy        # runs: npm run build && npx wrangler deploy
 ```
 
+## Tunnel
+
+```bash
+./tunnel-deploy.sh    # starts cloudflared → localhost:8081 (requires .tunnel-token)
+```
+
+First-time setup:
+```bash
+echo "YOUR_TOKEN" > .tunnel-token   # token from Cloudflare dashboard — gitignored
+```
+
+Java API must be running on port 8081 before starting the tunnel.
+
 ## Files
 
 | File | Purpose |
 |---|---|
 | `wrangler.jsonc` | Worker name, account ID, routes, ASSETS binding, BASE_PATH var |
-| `worker.ts` | Strips `/digitaltwin-app` prefix → serves assets → SPA fallback |
+| `worker.ts` | API proxy → strips prefix → serves assets → SPA fallback |
 | `vite.config.ts` | `base: '/digitaltwin-app/'` — all built asset paths prefixed correctly |
+| `tunnel-deploy.sh` | Starts cloudflared tunnel (`--token + --url http://localhost:8081`) |
+| `.tunnel-token` | Tunnel token (gitignored — never commit) |
 | `public/manifest.json` | PWA manifest (copied to `dist/` by Vite) |
 | `public/sw.js` | Service worker (copied to `dist/` by Vite) |
 
@@ -113,5 +129,45 @@ macOS `.DS_Store` files were present in `dist/` and got uploaded. Fixed by addin
 ### 4. Wrangler warning about asset path matching
 Wrangler warns: *"materalabs.us/digitaltwin-app/* will match assets: dist/digitaltwin-app/*"*. This is expected — the warning reflects that Cloudflare's built-in asset serving would look for `dist/digitaltwin-app/…`, but our custom worker strips the prefix and serves from `dist/` directly. The warning can be ignored.
 
-### 5. Account alignment
+### 5. CORS "Invalid CORS request" — Spring rejecting the preflight
+
+The browser sends an `OPTIONS` preflight before a cross-origin `POST`. If Spring rejects it, the browser never sends the real request. The symptom in the Worker debug output is `{"raw":"Invalid CORS request","_status":403}` (JSON, not HTML). Diagnose with:
+
+```bash
+curl -X OPTIONS https://your-domain.com/api/auth/google \
+  -H "Origin: https://your-domain.com" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: content-type"
+```
+
+Expected: `200` with `Access-Control-Allow-Origin` header. If you get 403, the origin is not in the allowed list.
+
+### 6. Spring `application-local.yml` requires explicit profile activation
+
+`application-local.yml` is a Spring profile file. It only loads when the app starts with `--spring.profiles.active=local`. Without the flag, only `application.yml` is read — meaning CORS allowed-origins defaults to `http://localhost:3000` only, and production requests are silently rejected.
+
+**Fix**: Put non-secret production origins (like `https://materalabs.us`) directly in `application.yml`. Reserve `application-local.yml` for secrets (DB credentials) and local overrides. Start the API with:
+
+```bash
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+### 7. Debug Worker pattern to identify 403 source
+
+When a 403 appears and it's unclear whether it comes from Cloudflare WAF, the Worker, or the backend, add debug output to the Worker proxy:
+
+```typescript
+if (!proxyResponse.ok) {
+  const body = await proxyResponse.text();
+  let parsed: any = {};
+  try { parsed = JSON.parse(body); } catch { parsed = { raw: body.slice(0, 300) }; }
+  return Response.json({ ...parsed, _status: proxyResponse.status }, { status: proxyResponse.status });
+}
+```
+
+- If `raw` contains HTML → Cloudflare WAF or Spring Whitelabel (backend reached)
+- If `error` is a JSON string → backend returned structured JSON error
+- `"Invalid CORS request"` as raw → Spring rejected the CORS preflight
+
+### 8. Account alignment
 Worker and DNS zone must be on the same account. Login as `carlos.netto@matera.com` gives access to both the personal (`Carlos.netto@matera.com's Account`) and business (`Tic.cloud@matera.com's Account`) accounts. The `account_id` in `wrangler.jsonc` explicitly targets the business account (`45281eba…`).

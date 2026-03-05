@@ -1,0 +1,28 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: digitaltwinapp-api
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/banking_system
+    hikari:
+      connection-timeout: 5000
+
+  session:
+    store-type: jdbc
+    jdbc:
+      initialize-schema: always
+      table-name: SPRING_SESSION
+    timeout: 7d
+
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.xml
+
+google:
+  allowed-domain: matera.com
+
+app:
+  # Comma-separated. Override in application-local.yml for additional origins.
+  allowed-origins: http://localhost:3000,https://materalabs.us

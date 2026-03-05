@@ -1,0 +1,10 @@
+# Copy to application-local.yml and fill in real values.
+# application-local.yml is gitignored — never commit secrets.
+
+spring:
+  datasource:
+    username: your-db-user
+    password: your-db-password
+
+app:
+  allowed-origins: http://localhost:3000,https://materalabs.us

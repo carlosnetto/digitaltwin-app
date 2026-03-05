@@ -3,7 +3,34 @@ export default {
     const url = new URL(request.url);
     const basePath = env.BASE_PATH || '/digitaltwin-app';
 
-    // Strip the base path prefix
+    // Proxy /digitaltwin-app/api/* to the Java API via Cloudflare Tunnel
+    if (url.pathname.startsWith(`${basePath}/api/`)) {
+      const apiOrigin = env.API_ORIGIN;
+      if (!apiOrigin) {
+        return Response.json({ error: 'API_ORIGIN secret not configured' }, { status: 503 });
+      }
+      const apiPath = url.pathname.slice(basePath.length); // strip /digitaltwin-app
+      const apiUrl = `${apiOrigin}${apiPath}${url.search}`;
+      try {
+        const proxyResponse = await fetch(apiUrl, {
+          method: request.method,
+          headers: request.headers,
+          body: request.method !== 'GET' && request.method !== 'HEAD' ? request.body : undefined,
+          redirect: 'follow',
+        });
+        if (!proxyResponse.ok) {
+          const body = await proxyResponse.text();
+          let parsed: any = {};
+          try { parsed = JSON.parse(body); } catch { parsed = { raw: body.slice(0, 300) }; }
+          return Response.json({ ...parsed, _status: proxyResponse.status }, { status: proxyResponse.status });
+        }
+        return proxyResponse;
+      } catch (e: any) {
+        return Response.json({ error: `Proxy error: ${e?.message ?? e}` }, { status: 502 });
+      }
+    }
+
+    // Strip the base path prefix for static assets
     let pathname = url.pathname;
     if (pathname.startsWith(basePath)) {
       pathname = pathname.slice(basePath.length) || '/';

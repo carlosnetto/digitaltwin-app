@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useGoogleLogin } from '@react-oauth/google';
 import { StoreProvider, useStore } from './store';
 import { Wallet as WalletType } from './types';
 import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode } from 'lucide-react';
@@ -1061,7 +1062,7 @@ function BottomNav({ onScanPress }: { onScanPress: () => void }) {
   );
 }
 
-function Sidebar() {
+function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }) {
   return (
     <div className="hidden md:flex flex-col w-64 bg-matera-card border-r border-white/5 h-screen fixed left-0 top-0 p-6">
       <div className="mb-10">
@@ -1083,11 +1084,68 @@ function Sidebar() {
           <Settings size={20} /> Settings
         </button>
       </nav>
+      <div className="border-t border-white/5 pt-4">
+        <div className="flex items-center gap-3 mb-3">
+          {user.picture && (
+            <img src={user.picture} alt={user.name} className="w-8 h-8 rounded-full" referrerPolicy="no-referrer" />
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-white truncate">{user.name}</p>
+            <p className="text-xs text-matera-muted truncate">{user.email}</p>
+          </div>
+        </div>
+        <button
+          onClick={onLogout}
+          className="w-full text-left text-sm text-matera-muted hover:text-white transition-colors px-2 py-1"
+        >
+          Sign out
+        </button>
+      </div>
     </div>
   );
 }
 
-function Login({ onLogin }: { onLogin: () => void }) {
+interface User {
+  email: string;
+  name: string;
+  picture: string;
+}
+
+function Login({ onLogin }: { onLogin: (user: User) => void }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const login = useGoogleLogin({
+    scope: 'openid email profile',
+    onSuccess: async (tokenResponse) => {
+      setLoading(true);
+      setError('');
+      try {
+        const res = await fetch(`${import.meta.env.BASE_URL}api/auth/google`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ access_token: tokenResponse.access_token }),
+        });
+        let data: any = {};
+        try { data = await res.json(); } catch { /* ignore non-JSON body */ }
+        if (!res.ok) {
+          setError(data.error ?? `Server error (${res.status})`);
+          return;
+        }
+        onLogin(data.user);
+      } catch {
+        setError('Could not reach the server. Is it running?');
+      } finally {
+        setLoading(false);
+      }
+    },
+    onError: () => {
+      setError('Google sign-in was cancelled or failed.');
+      setLoading(false);
+    },
+  });
+
   return (
     <div className="min-h-screen bg-matera-bg flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md bg-matera-card rounded-3xl p-8 border border-white/5 shadow-2xl flex flex-col items-center relative overflow-hidden animate-in zoom-in-95 duration-500">
@@ -1106,19 +1164,31 @@ function Login({ onLogin }: { onLogin: () => void }) {
         </div>
 
         <button
-          onClick={onLogin}
-          className="relative z-10 w-full bg-white text-gray-900 font-semibold py-4 px-6 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-100 transition-colors shadow-lg active:scale-[0.98] group"
+          onClick={() => { setError(''); login(); }}
+          disabled={loading}
+          className="relative z-10 w-full bg-white text-gray-900 font-semibold py-4 px-6 rounded-xl flex items-center justify-center gap-3 hover:bg-gray-100 transition-colors shadow-lg active:scale-[0.98] group disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <div className="bg-white p-1 rounded-full group-hover:scale-110 transition-transform">
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z" />
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-            </svg>
+            {loading ? (
+              <svg className="w-5 h-5 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+              </svg>
+            )}
           </div>
-          Continue with Google
+          {loading ? 'Signing in…' : 'Continue with Google'}
         </button>
+
+        {error && (
+          <p className="mt-4 text-sm text-red-400 text-center relative z-10">{error}</p>
+        )}
 
         <p className="mt-8 text-xs text-matera-muted text-center relative z-10 w-4/5 mx-auto opacity-70">
           By continuing, you agree to Matera's Terms of Service and Privacy Policy.
@@ -1129,17 +1199,34 @@ function Login({ onLogin }: { onLogin: () => void }) {
 }
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
 
-  if (!isAuthenticated) {
-    return <Login onLogin={() => setIsAuthenticated(true)} />;
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}api/auth/me`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.user) setUser(data.user);
+      })
+      .finally(() => setAuthChecked(true));
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    await fetch(`${import.meta.env.BASE_URL}api/auth/logout`, { method: 'POST', credentials: 'include' });
+    setUser(null);
+  }, []);
+
+  if (!authChecked) return null;
+
+  if (!user) {
+    return <Login onLogin={setUser} />;
   }
 
   return (
     <StoreProvider>
       <div className="min-h-screen bg-matera-bg pb-20 md:pb-0 md:pl-64 animate-in fade-in duration-500">
-        <Sidebar />
+        <Sidebar user={user} onLogout={handleLogout} />
         <Dashboard />
         <BottomNav onScanPress={() => setShowScanner(true)} />
         {showScanner && <QRScannerModal onClose={() => setShowScanner(false)} />}

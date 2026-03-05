@@ -34,8 +34,13 @@ coverage/
 !.env.example
 
 # Spring Boot local config (equivalent of .env — contains secrets, never commit)
-backoffice/application-local.yml
-!backoffice/application-local.yml.example
+backoffice/src/main/resources/application-local.yml
+!backoffice/src/main/resources/application-local.yml.example
+api/src/main/resources/application-local.yml
+!api/src/main/resources/application-local.yml.example
+
+# Cloudflare tunnel token (secret — never commit)
+.tunnel-token
 
 # SchemaSpy generated ERD output
 backoffice/docs/erd/

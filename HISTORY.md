@@ -113,6 +113,51 @@ Added `spring-boot-starter-jdbc`, `postgresql` (runtime), `liquibase-core`, `uui
 
 ---
 
+---
+
+### Mar 2026 — digitaltwinapp-api: Google Auth + Cloudflare Tunnel
+
+#### New `api/` module (Spring Boot — port 8081)
+Added a separate Spring Boot module (`api/`) to handle authentication. Intentionally named `digitaltwinapp-api` (not `digitaltwin-api`) to signal it serves the app, not the Digital Twin ledger itself.
+
+Key components:
+- `AuthController` — `POST /api/auth/google`, `GET /api/auth/me`, `POST /api/auth/logout`
+- `GoogleAuthService` — validates Google access token via userinfo endpoint, checks `@matera.com` domain, queries `digitaltwinapp.users`
+- `WebConfig` — CORS allowed-origins from `app.allowed-origins` property
+- Spring Session JDBC — session stored in PostgreSQL (`SPRING_SESSION` table in `public` schema)
+
+#### Liquibase schema (`digitaltwinapp`)
+3 migrations in `api/src/main/resources/db/changelog/`:
+- `001` — `CREATE SCHEMA IF NOT EXISTS digitaltwinapp`
+- `002` — `digitaltwinapp.users` table: `id UUID`, `email VARCHAR UNIQUE`, `name VARCHAR`, `status VARCHAR(20)` with check `IN ('active', 'suspended')`
+- `003` — seed row: `carlos.netto@matera.com / Carlos Netto / active`
+
+**Lesson (Liquibase chicken-and-egg):** Never set `spring.liquibase.default-schema` to a schema that doesn't exist yet. Liquibase needs to write its own tracking tables before the migration that creates the schema runs. Solution: leave `default-schema` unset — Liquibase tracks in `public`, migration 001 creates `digitaltwinapp`.
+
+#### Cloudflare Tunnel (`digitaltwinapp-api`)
+Named tunnel exposing `localhost:8081` at `digitaltwinapp-api.materalabs.us`. Uses `--token + --url` pattern — no ingress config files needed.
+
+- Tunnel UUID: `dcb4ed6a-a0c0-451a-9e1b-e8c2803f81de`
+- DNS CNAME already routed: `digitaltwinapp-api.materalabs.us → <UUID>.cfargotunnel.com`
+- `tunnel-deploy.sh` — reads `.tunnel-token` (gitignored), starts cloudflared
+
+Worker `API_ORIGIN` secret: `https://digitaltwinapp-api.materalabs.us`
+
+#### Worker API proxy
+`worker.ts` updated to proxy `/digitaltwin-app/api/*` to the tunnel. Critical: construct outbound fetch explicitly — do NOT copy the entire Request object (copies `credentials: 'include'` which throws in the Worker runtime).
+
+Added debug pattern: capture non-OK response body as `{ raw, _status }` to identify whether 403 comes from Cloudflare WAF (HTML) or the backend (JSON).
+
+#### Frontend auth integration
+- All API fetches use `` `${import.meta.env.BASE_URL}api/auth/...` `` — scoped under `/digitaltwin-app/` to avoid conflicts with other apps on `materalabs.us`
+- `useGoogleLogin` with `scope: 'openid email profile'` for the implicit flow
+- Error handling: `try { data = await res.json() } catch {}` then `data.error ?? \`Server error (${res.status})\``
+- Vite proxy: `/digitaltwin-app/api` → `http://localhost:8081` (strips prefix)
+
+**Lesson (CORS + Spring profiles):** `application-local.yml` only loads when `--spring.profiles.active=local` is active. Without the flag, `app.allowed-origins` defaults to `http://localhost:3000` only, causing Spring to return `403 Invalid CORS request` for all production traffic. Fix: put non-secret production origins directly in `application.yml`.
+
+**Lesson (debug workflow):** When a mysterious 403 appears, test the CORS preflight directly with curl before debugging in the browser: `curl -X OPTIONS ... -H "Origin: ..." -H "Access-Control-Request-Method: POST"`. A 403 with `{"raw":"Invalid CORS request"}` immediately identifies Spring CORS rejection vs. Cloudflare WAF.
+
 ### QR Scanner — simulated viewfinder
 `Activity` tab in the bottom nav replaced with a central raised QR scan button (glowing green circle, `QrCode` icon). Tapping opens `QRScannerModal` — a full-screen overlay with:
 - Animated scan line (CSS `@keyframes qr-scan`, sweeping top→bottom in 2.4s loop)

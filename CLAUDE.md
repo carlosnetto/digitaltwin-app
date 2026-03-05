@@ -20,9 +20,38 @@ public/
   manifest.json # PWA manifest
   sw.js         # Service worker
   icon.svg      # App icon
-worker.ts       # Cloudflare Worker
+worker.ts       # Cloudflare Worker: API proxy + prefix strip + SPA fallback
 wrangler.jsonc  # Cloudflare config
+tunnel-deploy.sh  # Starts cloudflared → localhost:8081 (requires .tunnel-token)
 ```
+
+### API (Spring Boot — port 8081)
+```
+api/
+  src/main/java/.../
+    controller/AuthController.java   # POST /api/auth/google, GET /api/auth/me, POST /api/auth/logout
+    service/GoogleAuthService.java   # access_token → Google userinfo → domain check → DB check
+    config/WebConfig.java            # CORS: allowed origins from app.allowed-origins
+  src/main/resources/
+    db/changelog/
+      001-create-schema.xml          # CREATE SCHEMA digitaltwinapp
+      002-create-users.xml           # digitaltwinapp.users (id, email, name, status)
+      003-seed-users.xml             # carlos.netto@matera.com as active
+    application.yml                  # port 8081, Liquibase, CORS (includes https://materalabs.us)
+    application-local.yml            # gitignored — DB credentials
+    application-local.yml.example    # template for new devs
+```
+
+**Run:** `cd api && mvn spring-boot:run -Dspring-boot.run.profiles=local`
+
+**Auth flow:**
+1. Browser Google popup → access token
+2. `POST ${import.meta.env.BASE_URL}api/auth/google` → Worker proxies to tunnel → Java
+3. Java: calls Google userinfo API → validates `@matera.com` domain → queries `digitaltwinapp.users`
+4. Returns `200` + session cookie, or `403` (not provisioned / suspended)
+
+**Database:** `digitaltwinapp` schema in `banking_system` PostgreSQL (`global_banking_db` Docker).
+Credentials in `application-local.yml` (gitignored). Liquibase runs automatically on startup.
 
 ### Backoffice (Spring Boot — port 8080)
 ```
@@ -75,10 +104,23 @@ src={`${import.meta.env.BASE_URL}assets/Circle_USDC_Logo.svg.png`}
 src="/assets/Circle_USDC_Logo.svg.png"
 ```
 
-### Frontend vs Backoffice
-The PWA frontend (`src/`) is a pure SPA — no API calls, all state in `store.tsx`. The Cloudflare Worker only strips the base path prefix and serves static assets with SPA fallback.
+### API Calls from the Frontend
+All API calls must use `import.meta.env.BASE_URL` as prefix to scope them under `/digitaltwin-app/`:
 
-The backoffice (`backoffice/`) is a separate Spring Boot process on port 8080. It is not connected to the frontend yet — it manages on-chain wallets independently.
+```typescript
+// Good — scoped, works in dev (Vite proxy) and prod (Worker proxy)
+fetch(`${import.meta.env.BASE_URL}api/auth/google`, { method: 'POST', ... })
+
+// Bad — /api/google conflicts with other apps sharing the domain
+fetch('/api/auth/google', ...)
+```
+
+The Vite dev server proxies `/digitaltwin-app/api/*` → `http://localhost:8081`. The Cloudflare Worker does the same in production via tunnel.
+
+### Frontend vs API vs Backoffice
+- **Frontend (`src/`)** — SPA with local seed state. Login talks to the API; wallet UI is still mock data.
+- **API (`api/`)** — Spring Boot on port 8081. Handles auth (Google OAuth + DB gate). Connected to frontend.
+- **Backoffice (`backoffice/`)** — Spring Boot on port 8080. Manages on-chain Solana wallets. Not yet connected to the frontend.
 
 ## Design System
 
