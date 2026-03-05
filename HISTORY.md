@@ -166,3 +166,78 @@ Added debug pattern: capture non-OK response body as `{ raw, _status }` to ident
 - No real camera yet (requires HTTPS + permissions wiring)
 
 **Next step:** Wire `jsqr` or `@zxing/library` into `QRScannerModal` to decode actual QR data from the camera feed, then route based on detected format (Pix, X9.150, EVM address, Solana address, etc.).
+
+---
+
+## Mar 2026 — Live Wallets, Exchange Rates & Buy/Sell Conversions
+
+### CORS fix — production origin must be in `application.yml`
+`app.allowed-origins` was only set in `application-local.yml`, which only loads with `--spring.profiles.active=local`. In production the property defaulted to `http://localhost:3000`, causing Spring to return `403 Invalid CORS request` for all preflight requests from `https://materalabs.us`.
+
+**Fix:** Added `https://materalabs.us` directly to `application.yml`. Non-secret origins always go in the base config.
+
+**Lesson:** `application-{profile}.yml` is additive override, not a fallback. If a property must be set in production, it goes in `application.yml`.
+
+### SeedLoader Scanner resource leak fixed
+`Scanner` was being constructed inside the retry loop — a new one per attempt, wrapping `System.in`. This triggers a Sonar S2093 warning because closing the Scanner would also close `System.in`, breaking all subsequent reads. Fixed by making `Scanner` a field initialized once, with `@SuppressWarnings("java:S2093")` explaining the intentional non-close.
+
+### Auto-provisioning new @matera.com users
+`GoogleAuthService` now auto-inserts unknown `@matera.com` users on first successful Google login. If the email is not in `digitaltwinapp.users`, the user is inserted with `status=active` and `name` from the Google profile. Subsequent logins hit the existing row normally.
+
+### Sequential `user_id` (migration 004)
+Added `user_id BIGINT` column to `digitaltwinapp.users` (sequence starts at 1003; existing seeded users assigned 1000, 1001, 1002). This sequential ID drives the mini-core account number formula (`user_id * 1000 + currency_id`) and is used as FK in `user_accounts` and `conversions`.
+
+### Currencies table (migration 005)
+New `digitaltwinapp.currencies` table with IDs starting at 100 to avoid collision with mini-core:
+
+| id  | code | name             | is_fiat |
+|-----|------|------------------|---------|
+| 100 | USD  | US Dollar        | true    |
+| 101 | BRL  | Brazilian Real   | true    |
+| 103 | USDC | USD Coin         | false   |
+| 104 | USDT | Tether           | false   |
+
+EUR (102) was briefly added but removed — mini-core didn't have it seeded and it's not needed.
+
+Migration 008 added `is_fiat BOOLEAN` and `logo_url VARCHAR(200)`. Crypto wallets carry relative asset paths (`assets/Circle_USDC_Logo.svg.png`, `assets/tether-usdt-logo.svg`) that the frontend resolves with `import.meta.env.BASE_URL`.
+
+### User accounts table (migration 006)
+`digitaltwinapp.user_accounts` correlates users ↔ currencies ↔ mini-core account IDs.
+- Account number formula: `user_id * 1000 + currency_id`
+- `minicore_account_id` is populated after mini-core confirms creation (≥ 0)
+- `ON CONFLICT (user_id, currency_id) DO NOTHING` for idempotency
+
+### pg_notify provisioning trigger (migration 007)
+PostgreSQL trigger on `digitaltwinapp.users INSERT` fires `pg_notify('user_created', user_id::text)`. The Java `PostgresNotificationListener` daemon picks this up and calls `UserAccountProvisioningService.provisionUser(userId)` in real time, creating one mini-core account per currency. A `@Scheduled(fixedDelayString="60000")` catch-all retries any rows still missing their accounts after 60 seconds.
+
+**Note:** `postgresql` dependency in `pom.xml` was `<scope>runtime</scope>`, which hid `PGConnection`/`PGNotification` from the compiler. Fixed by removing the scope.
+
+### Live wallet balances from mini-core (GET /api/wallets)
+`WalletService` queries `user_accounts JOIN currencies`, then fetches each account's `available_balance` from `GET /api/accounts/{id}` in mini-core. Returns a `List<WalletDto>` with live balances.
+
+`store.tsx` was completely rewritten — hardcoded wallet data removed, replaced by `fetch(BASE_URL + 'api/wallets')` on mount and via `refreshWallets()`. `App.tsx` guards against empty wallet list during load with a "Loading wallets…" placeholder to prevent a `TypeError` on `activeWallet.currency`.
+
+### Liquidity Buffer (migration 009)
+System account seeded: `user_id=1`, `email=liquidity-buffer@system`, `name=Liquidity Buffer`, `status=active`. Cannot log in via Google (email domain check rejects it). Has one mini-core account per currency, provisioned by the same daemon. Serves as the counterparty for all buy/sell conversions.
+
+### Exchange rates table (migration 010)
+`digitaltwinapp.exchange_rates` stores all 12 directional pairs for 4 currencies (4 × 3). Stablecoin pairs (USDC↔USD, USDT↔USD, USDC↔USDT) are locked at `rate=1.0` with `is_stablecoin_pair=true` and never updated.
+
+`ExchangeRateService` runs `@Scheduled(fixedDelayString="600000", initialDelayString="10000")` and refreshes all non-stablecoin pairs from `open.er-api.com/v6/latest/{CODE}` (free, no API key). USDC and USDT are mapped to USD for the external lookup.
+
+### Buy/Sell conversions (migration 011 + ConversionService)
+`digitaltwinapp.conversions` table records every completed exchange:
+- Sequential `id` (BIGINT sequence, not UUID)
+- `user_id`, `from_currency_id`, `to_currency_id`, `from_amount`, `to_amount`, `rate`
+- `user_debit_tx_id`, `user_credit_tx_id`, `pool_credit_tx_id`, `pool_debit_tx_id` — all four mini-core transaction IDs
+
+`POST /api/wallets/convert` accepts `{ fromCurrencyCode, toCurrencyCode, fromAmount }`, looks up the real exchange rate from the DB, computes `toAmount`, then fires four mini-core transactions atomically:
+
+| Leg | Account | Direction | Code | Label |
+|-----|---------|-----------|------|-------|
+| User pays | from_currency | DEBIT | 20026 | P2P Sent |
+| User receives | to_currency | CREDIT | 10027 | P2P Received |
+| Pool receives | from_currency | CREDIT | 10018 | Internal Transfer In |
+| Pool delivers | to_currency | DEBIT | 20021 | Internal Transfer Out |
+
+`BuyModal` sends `fromCurrencyCode=fiatCurrency, toCurrencyCode=wallet.currency`. `SellModal` sends the reverse. Both show a "Processing…" spinner, surface API errors inline, and call `refreshWallets()` on success so balances update immediately without a page reload.

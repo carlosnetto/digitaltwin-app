@@ -29,14 +29,30 @@ tunnel-deploy.sh  # Starts cloudflared → localhost:8081 (requires .tunnel-toke
 ```
 api/
   src/main/java/.../
+    client/MiniCoreClient.java       # getAccount, createAccount, createTransaction → localhost:5001
     controller/AuthController.java   # POST /api/auth/google, GET /api/auth/me, POST /api/auth/logout
-    service/GoogleAuthService.java   # access_token → Google userinfo → domain check → DB check
+    controller/WalletController.java # GET /api/wallets, POST /api/wallets/convert
+    listener/PostgresNotificationListener.java  # pg_notify daemon → provisions accounts on new user
+    model/                           # UserInfo, WalletDto, ConversionRequest, ConversionResultDto
+    service/GoogleAuthService.java   # token → userinfo → domain check → DB check; auto-inserts new users
+    service/WalletService.java       # live balances from mini-core per user
+    service/UserAccountProvisioningService.java # creates mini-core accounts; 60s catch-all @Scheduled
+    service/ExchangeRateService.java # @Scheduled every 10min from open.er-api.com
+    service/ConversionService.java   # 4 mini-core transactions + conversions table record
     config/WebConfig.java            # CORS: allowed origins from app.allowed-origins
   src/main/resources/
     db/changelog/
       001-create-schema.xml          # CREATE SCHEMA digitaltwinapp
-      002-create-users.xml           # digitaltwinapp.users (id, email, name, status)
-      003-seed-users.xml             # carlos.netto@matera.com as active
+      002-create-users.xml           # users (id UUID, email, name, status, user_id BIGINT)
+      003-seed-users.xml             # carlos.netto@matera.com as active (user_id=1000)
+      004-add-user-id.xml            # sequential user_id column; seq starts 1003
+      005-create-currencies.xml      # currencies: USD=100, BRL=101, USDC=103, USDT=104
+      006-create-user-accounts.xml   # user_accounts (user_id, currency_id, minicore_account_id)
+      007-user-created-notify-trigger.xml  # pg_notify('user_created') on INSERT
+      008-currencies-add-is-fiat-logo.xml  # is_fiat BOOLEAN, logo_url VARCHAR
+      009-seed-liquidity-buffer.xml  # system account user_id=1, liquidity-buffer@system
+      010-create-exchange-rates.xml  # 12 directional pairs; stablecoin pairs locked at 1.0
+      011-create-conversions.xml     # conversions table with 4 tx IDs
     application.yml                  # port 8081, Liquibase, CORS (includes https://materalabs.us)
     application-local.yml            # gitignored — DB credentials
     application-local.yml.example    # template for new devs
@@ -48,10 +64,13 @@ api/
 1. Browser Google popup → access token
 2. `POST ${import.meta.env.BASE_URL}api/auth/google` → Worker proxies to tunnel → Java
 3. Java: calls Google userinfo API → validates `@matera.com` domain → queries `digitaltwinapp.users`
-4. Returns `200` + session cookie, or `403` (not provisioned / suspended)
+4. If not found and domain matches → auto-inserts user as `active`
+5. Returns `200` + session cookie, or `403` (suspended)
 
 **Database:** `digitaltwinapp` schema in `banking_system` PostgreSQL (`global_banking_db` Docker).
 Credentials in `application-local.yml` (gitignored). Liquibase runs automatically on startup.
+
+**CORS:** Non-secret production origins (`https://materalabs.us`) must be in `application.yml`, NOT only in `application-local.yml` — profile files only load when explicitly activated.
 
 ### Backoffice (Spring Boot — port 8080)
 ```
@@ -118,8 +137,8 @@ fetch('/api/auth/google', ...)
 The Vite dev server proxies `/digitaltwin-app/api/*` → `http://localhost:8081`. The Cloudflare Worker does the same in production via tunnel.
 
 ### Frontend vs API vs Backoffice
-- **Frontend (`src/`)** — SPA with local seed state. Login talks to the API; wallet UI is still mock data.
-- **API (`api/`)** — Spring Boot on port 8081. Handles auth (Google OAuth + DB gate). Connected to frontend.
+- **Frontend (`src/`)** — SPA. Fetches live wallet balances and drives buy/sell conversions via the API.
+- **API (`api/`)** — Spring Boot on port 8081. Auth, live balances, exchange rates, conversions. Connected to frontend and mini-core.
 - **Backoffice (`backoffice/`)** — Spring Boot on port 8080. Manages on-chain Solana wallets. Not yet connected to the frontend.
 
 ## Design System
@@ -139,16 +158,41 @@ Custom Tailwind colors defined in `src/index.css` `@theme` block:
 
 Do NOT rename these tokens — they are used throughout App.tsx (100+ references).
 
-## Wallets (seed data)
+## Currencies & Wallets
 
-| ID | Currency | Type | Balance |
-|---|---|---|---|
-| 3 | USDC | crypto | 250.00 |
-| 4 | USDT | crypto | 100.00 |
-| 2 | USD | fiat | 500.00 |
-| 1 | BRL | fiat | 1500.50 |
+Currencies are defined in `digitaltwinapp.currencies`. IDs start at 100 to avoid collision with mini-core IDs.
 
-Transactions: 30 seed entries across all 4 wallets using real mini-core transaction codes.
+| id  | code | name           | is_fiat | logo_url |
+|-----|------|----------------|---------|----------|
+| 100 | USD  | US Dollar      | true    | —        |
+| 101 | BRL  | Brazilian Real | true    | —        |
+| 103 | USDC | USD Coin       | false   | `assets/Circle_USDC_Logo.svg.png` |
+| 104 | USDT | Tether         | false   | `assets/tether-usdt-logo.svg` |
+
+Wallet balances are live — fetched from mini-core on every page load and after each conversion. There is no seed balance data in the frontend; balances come from `GET /api/wallets` → `WalletService` → `MiniCoreClient.getAccount()`.
+
+**Liquidity Buffer:** system account `user_id=1`, `email=liquidity-buffer@system`. Has one mini-core account per currency. Serves as the counterparty for all buy/sell conversions. Cannot log in (email fails `@matera.com` domain check).
+
+**Account number formula:** `user_id * 1000 + currency_id` (e.g., user 1000 + USD 100 = account `1000100`)
+
+## Exchange Rates
+
+`digitaltwinapp.exchange_rates` holds all 12 directional pairs. Stablecoin pairs (USDC↔USD, USDT↔USD, USDC↔USDT) have `is_stablecoin_pair=true` and are never updated. Non-stablecoin pairs refresh every 10 minutes from `open.er-api.com` (free, no API key).
+
+## Buy/Sell Conversion
+
+`POST /api/wallets/convert` — body: `{ fromCurrencyCode, toCurrencyCode, fromAmount }`
+
+Four mini-core transactions are created per conversion:
+
+| Leg | Direction | Code | Label |
+|-----|-----------|------|-------|
+| User's from_currency | DEBIT | 20026 | P2P Sent |
+| User's to_currency | CREDIT | 10027 | P2P Received |
+| Pool's from_currency | CREDIT | 10018 | Internal Transfer In |
+| Pool's to_currency | DEBIT | 20021 | Internal Transfer Out |
+
+All four tx IDs plus the applied rate are recorded in `digitaltwinapp.conversions`.
 
 ## QR Scanner
 

@@ -1,6 +1,6 @@
 # Digital Twin App
 
-A multicurrency mobile wallet prototype built on Matera's Digital Twin ledger. Supports fiat (USD, BRL) and crypto (USDC, USDT) wallets with real transaction type codes, QR payment scanning, and a fully installable PWA experience.
+A multicurrency mobile wallet prototype built on Matera's Digital Twin ledger. Supports fiat (USD, BRL) and crypto (USDC, USDT) wallets with live balances, real-time exchange rates, buy/sell conversions, and a fully installable PWA experience.
 
 **Live:** https://materalabs.us/digitaltwin-app
 
@@ -68,11 +68,13 @@ public/
   icon.svg          # App icon (DT mark, brand colors)
 api/                # Spring Boot Java API (port 8081)
   src/main/java/.../
-    controller/     # AuthController: /api/auth/google, /me, /logout
-    service/        # GoogleAuthService: token → Google userinfo → DB check
+    client/         # MiniCoreClient: account CRUD + transaction creation
+    controller/     # AuthController, WalletController (GET /api/wallets, POST /api/wallets/convert)
+    listener/       # PostgresNotificationListener: pg_notify → provision accounts
+    service/        # Auth, wallets, provisioning, exchange rates (10min), conversions
     config/         # WebConfig (CORS), SecurityConfig
   src/main/resources/
-    db/changelog/   # 3 Liquibase migrations → digitaltwinapp schema
+    db/changelog/   # 11 Liquibase migrations → digitaltwinapp schema
     application.yml
     application-local.yml  # gitignored — DB credentials
 worker.ts           # Cloudflare Worker: API proxy + prefix strip + SPA fallback
@@ -87,8 +89,11 @@ Login is Google OAuth restricted to `@matera.com` accounts. The flow:
 1. Browser opens Google popup → receives access token
 2. Token POSTed to `/digitaltwin-app/api/auth/google`
 3. Worker proxies to Java API via Cloudflare Tunnel
-4. Java calls Google userinfo, checks `@matera.com` domain, then queries `digitaltwinapp.users` table
-5. Returns 200 (session cookie) or 403 (not provisioned / suspended)
+4. Java calls Google userinfo, checks `@matera.com` domain, queries `digitaltwinapp.users`
+5. New `@matera.com` users are auto-provisioned on first login
+6. Returns 200 (session cookie) or 403 (suspended)
+
+On login, four mini-core accounts (USD, BRL, USDC, USDT) are automatically created for the user via a PostgreSQL `LISTEN/NOTIFY` trigger.
 
 ## Installing as a Mobile App (PWA)
 
