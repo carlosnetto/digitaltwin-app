@@ -15,14 +15,16 @@ import java.util.Map;
  * Executes a currency conversion between two of the user's wallets.
  *
  * Flow (buy USDC with USD example):
- *   1. Debit  user's  fromCurrency account  (user pays)
- *   2. Credit user's  toCurrency   account  (user receives)
- *   3. Credit pool's  fromCurrency account  (pool receives payment)
- *   4. Debit  pool's  toCurrency   account  (pool delivers crypto)
+ *   1. Debit  user's  fromCurrency (fiat)   account — 50005 Crypto Purchase Payment
+ *   2. Credit user's  toCurrency   (crypto) account — 40003 Crypto Purchase
+ *   3. Credit pool's  fromCurrency account            — 10018 Internal Transfer In
+ *   4. Debit  pool's  toCurrency   account            — 20021 Internal Transfer Out
  *
- * Transaction codes used:
- *   DEBIT  → 20026 (P2P Sent)
- *   CREDIT → 10027 (P2P Received)
+ * Flow (sell USDC for USD example):
+ *   1. Debit  user's  fromCurrency (crypto) account — 50003 Crypto Sale
+ *   2. Credit user's  toCurrency   (fiat)   account — 40005 Crypto Sale Proceeds
+ *   3. Credit pool's  fromCurrency account            — 10018 Internal Transfer In
+ *   4. Debit  pool's  toCurrency   account            — 20021 Internal Transfer Out
  *
  * The pool is the Liquidity Buffer account (user_id = 1).
  */
@@ -31,10 +33,18 @@ public class ConversionService {
 
     private static final Logger log = LoggerFactory.getLogger(ConversionService.class);
 
-    private static final int TX_CODE_DEBIT        = 20026; // P2P Sent          (user side)
-    private static final int TX_CODE_CREDIT       = 10027; // P2P Received       (user side)
-    private static final int TX_CODE_POOL_CREDIT  = 10018; // Internal Transfer In  (pool side)
-    private static final int TX_CODE_POOL_DEBIT   = 20021; // Internal Transfer Out (pool side)
+    // User side — buy crypto
+    private static final int TX_BUY_FIAT_DEBIT   = 50005; // Crypto Purchase Payment (fiat goes out)
+    private static final int TX_BUY_CRYPTO_CREDIT = 40003; // Crypto Purchase         (crypto comes in)
+
+    // User side — sell crypto
+    private static final int TX_SELL_CRYPTO_DEBIT = 50003; // Crypto Sale             (crypto goes out)
+    private static final int TX_SELL_FIAT_CREDIT  = 40005; // Crypto Sale Proceeds    (fiat comes in)
+
+    // Pool side (same regardless of direction)
+    private static final int TX_CODE_POOL_CREDIT  = 10018; // Internal Transfer In
+    private static final int TX_CODE_POOL_DEBIT   = 20021; // Internal Transfer Out
+
     private static final long POOL_USER_ID        = 1L;
 
     private final JdbcTemplate    jdbc;
@@ -56,16 +66,20 @@ public class ConversionService {
                 Long.class, email);
         if (userId == null) throw new IllegalArgumentException("User not found: " + email);
 
-        // ── 2. Resolve currency IDs ────────────────────────────────────────
-        Integer fromCurrencyId = jdbc.queryForObject(
-                "SELECT id FROM digitaltwinapp.currencies WHERE code = ?",
-                Integer.class, fromCurrencyCode);
-        Integer toCurrencyId = jdbc.queryForObject(
-                "SELECT id FROM digitaltwinapp.currencies WHERE code = ?",
-                Integer.class, toCurrencyCode);
-        if (fromCurrencyId == null || toCurrencyId == null) {
-            throw new IllegalArgumentException("Unknown currency pair: " + fromCurrencyCode + "/" + toCurrencyCode);
-        }
+        // ── 2. Resolve currency IDs + is_fiat ─────────────────────────────
+        Map<String, Object> fromCcy = jdbc.queryForMap(
+                "SELECT id, is_fiat FROM digitaltwinapp.currencies WHERE code = ?", fromCurrencyCode);
+        Map<String, Object> toCcy = jdbc.queryForMap(
+                "SELECT id, is_fiat FROM digitaltwinapp.currencies WHERE code = ?", toCurrencyCode);
+
+        int fromCurrencyId = ((Number) fromCcy.get("id")).intValue();
+        int toCurrencyId   = ((Number) toCcy.get("id")).intValue();
+
+        // Determine direction: buying crypto = toCurrency is not fiat
+        boolean buyingCrypto = !Boolean.TRUE.equals(toCcy.get("is_fiat"));
+
+        int userDebitCode  = buyingCrypto ? TX_BUY_FIAT_DEBIT   : TX_SELL_CRYPTO_DEBIT;
+        int userCreditCode = buyingCrypto ? TX_BUY_CRYPTO_CREDIT : TX_SELL_FIAT_CREDIT;
 
         // ── 3. Look up exchange rate ───────────────────────────────────────
         BigDecimal rate = jdbc.queryForObject(
@@ -88,10 +102,10 @@ public class ConversionService {
         String desc = "Currency conversion " + fromCurrencyCode + " → " + toCurrencyCode;
 
         // ── 5. Execute the 4 mini-core transactions ────────────────────────
-        long userDebitTxId  = miniCoreClient.createTransaction(userFromAccount, TX_CODE_DEBIT,       fromAmount, "DEBIT",  desc);
-        long userCreditTxId = miniCoreClient.createTransaction(userToAccount,   TX_CODE_CREDIT,      toAmount,   "CREDIT", desc);
-        long poolCreditTxId = miniCoreClient.createTransaction(poolFromAccount, TX_CODE_POOL_CREDIT, fromAmount, "CREDIT", desc);
-        long poolDebitTxId  = miniCoreClient.createTransaction(poolToAccount,   TX_CODE_POOL_DEBIT,  toAmount,   "DEBIT",  desc);
+        long userDebitTxId  = miniCoreClient.createTransaction(userFromAccount, userDebitCode,        fromAmount, "DEBIT",  desc);
+        long userCreditTxId = miniCoreClient.createTransaction(userToAccount,   userCreditCode,       toAmount,   "CREDIT", desc);
+        long poolCreditTxId = miniCoreClient.createTransaction(poolFromAccount, TX_CODE_POOL_CREDIT,  fromAmount, "CREDIT", desc);
+        long poolDebitTxId  = miniCoreClient.createTransaction(poolToAccount,   TX_CODE_POOL_DEBIT,   toAmount,   "DEBIT",  desc);
 
         if (userDebitTxId < 0 || userCreditTxId < 0) {
             log.error("Conversion failed: user transactions returned error (debit={}, credit={})",
