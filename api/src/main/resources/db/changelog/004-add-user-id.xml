@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="004-add-user-id" author="digitaltwinapp-api">
+        <sql splitStatements="true">
+            ALTER TABLE digitaltwinapp.users ADD COLUMN user_id BIGINT;
+
+            UPDATE digitaltwinapp.users SET user_id = 1000 WHERE email = 'carlos.netto@matera.com';
+            UPDATE digitaltwinapp.users SET user_id = 1001 WHERE email = 'juliana.monteiro@matera.com';
+            UPDATE digitaltwinapp.users SET user_id = 1002 WHERE email = 'lucas.baccan@matera.com';
+
+            CREATE SEQUENCE digitaltwinapp.users_user_id_seq START WITH 1003 INCREMENT BY 1;
+            ALTER TABLE digitaltwinapp.users ALTER COLUMN user_id SET DEFAULT nextval('digitaltwinapp.users_user_id_seq');
+            ALTER TABLE digitaltwinapp.users ALTER COLUMN user_id SET NOT NULL;
+            ALTER TABLE digitaltwinapp.users ADD CONSTRAINT users_user_id_unique UNIQUE (user_id);
+        </sql>
+        <rollback>
+            ALTER TABLE digitaltwinapp.users DROP COLUMN user_id;
+            DROP SEQUENCE IF EXISTS digitaltwinapp.users_user_id_seq;
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

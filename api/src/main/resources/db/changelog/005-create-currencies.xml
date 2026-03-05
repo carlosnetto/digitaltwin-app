@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="005-create-currencies" author="digitaltwinapp-api">
+        <sql splitStatements="true">
+            CREATE TABLE digitaltwinapp.currencies (
+                id             INTEGER      NOT NULL,
+                code           VARCHAR(10)  NOT NULL,
+                name           VARCHAR(100) NOT NULL,
+                decimal_places SMALLINT     NOT NULL,
+                CONSTRAINT currencies_pkey         PRIMARY KEY (id),
+                CONSTRAINT currencies_code_unique  UNIQUE (code)
+            );
+
+            CREATE SEQUENCE digitaltwinapp.currencies_id_seq START WITH 105 INCREMENT BY 1;
+            ALTER TABLE digitaltwinapp.currencies ALTER COLUMN id SET DEFAULT nextval('digitaltwinapp.currencies_id_seq');
+
+            INSERT INTO digitaltwinapp.currencies (id, code, name, decimal_places) VALUES
+                (100, 'USD',  'US Dollar',        2),
+                (101, 'BRL',  'Brazilian Real',   2),
+                (102, 'EUR',  'Euro',             2),
+                (103, 'USDC', 'USD Coin',         6),
+                (104, 'USDT', 'Tether USD',       6);
+        </sql>
+        <rollback>
+            DROP TABLE IF EXISTS digitaltwinapp.currencies;
+            DROP SEQUENCE IF EXISTS digitaltwinapp.currencies_id_seq;
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

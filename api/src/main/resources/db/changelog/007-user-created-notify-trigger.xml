@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <!-- Function body contains semicolons — splitStatements must be false -->
+    <changeSet id="007-user-created-notify-trigger" author="digitaltwinapp-api">
+        <sql splitStatements="false">
+            CREATE OR REPLACE FUNCTION digitaltwinapp.notify_user_created()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                PERFORM pg_notify(
+                    'user_created',
+                    json_build_object('user_id', NEW.user_id)::text
+                );
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+        </sql>
+        <sql splitStatements="true">
+            CREATE TRIGGER trg_user_created
+                AFTER INSERT ON digitaltwinapp.users
+                FOR EACH ROW EXECUTE FUNCTION digitaltwinapp.notify_user_created();
+        </sql>
+        <rollback>
+            DROP TRIGGER IF EXISTS trg_user_created ON digitaltwinapp.users;
+            DROP FUNCTION IF EXISTS digitaltwinapp.notify_user_created();
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

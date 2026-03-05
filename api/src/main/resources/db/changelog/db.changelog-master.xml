@@ -8,5 +8,9 @@
     <include file="db/changelog/001-create-schema.xml"/>
     <include file="db/changelog/002-create-users.xml"/>
     <include file="db/changelog/003-seed-users.xml"/>
+    <include file="db/changelog/004-add-user-id.xml"/>
+    <include file="db/changelog/005-create-currencies.xml"/>
+    <include file="db/changelog/006-create-user-accounts.xml"/>
+    <include file="db/changelog/007-user-created-notify-trigger.xml"/>
 
 </databaseChangeLog>

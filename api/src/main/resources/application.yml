@@ -20,6 +20,9 @@ spring:
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.xml
 
+minicore:
+  base-url: http://localhost:5001
+
 google:
   allowed-domain: matera.com
 
