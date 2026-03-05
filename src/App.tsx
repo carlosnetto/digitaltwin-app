@@ -391,7 +391,7 @@ function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => 
               <label className="block text-sm font-medium text-matera-muted mb-2">I want to convert</label>
               <div className="relative">
                 <input
-                  type="number"
+                  type="number" min="0"
                   value={sourceAmount}
                   onChange={(e) => handleSourceChange(e.target.value)}
                   placeholder="0.00"
@@ -415,7 +415,7 @@ function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => 
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <input
-                    type="number"
+                    type="number" min="0"
                     value={targetAmount}
                     onChange={(e) => handleTargetChange(e.target.value)}
                     placeholder="0.00"
@@ -701,7 +701,7 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
               <label className="block text-sm font-medium text-matera-muted mb-2">I want to buy</label>
               <div className="relative">
                 <input
-                  type="number"
+                  type="number" min="0"
                   value={cryptoAmount}
                   onChange={(e) => handleCryptoChange(e.target.value)}
                   placeholder="0.00"
@@ -724,7 +724,7 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <input
-                    type="number"
+                    type="number" min="0"
                     value={fiatAmount}
                     onChange={(e) => handleFiatChange(e.target.value)}
                     placeholder="0.00"
@@ -855,7 +855,7 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
               <label className="block text-sm font-medium text-matera-muted mb-2">I want to sell</label>
               <div className="relative">
                 <input
-                  type="number"
+                  type="number" min="0"
                   value={cryptoAmount}
                   onChange={(e) => handleCryptoChange(e.target.value)}
                   placeholder="0.00"
@@ -878,7 +878,7 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <input
-                    type="number"
+                    type="number" min="0"
                     value={fiatAmount}
                     onChange={(e) => handleFiatChange(e.target.value)}
                     placeholder="0.00"
@@ -969,7 +969,7 @@ function SendModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
                   <span className="text-matera-muted">{wallet.type === 'fiat' ? wallet.symbol : ''}</span>
                 </div>
                 <input
-                  type="number"
+                  type="number" min="0"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00"
