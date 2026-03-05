@@ -99,7 +99,17 @@ function Dashboard() {
   };
 
   const activeWallet = wallets[currentIndex];
-  const activeTransactions = transactions.filter(t => t.walletId === activeWallet.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const activeTransactions = activeWallet
+    ? transactions.filter(t => t.walletId === activeWallet.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    : [];
+
+  if (!activeWallet) {
+    return (
+      <div className="max-w-4xl mx-auto py-2 md:py-4 flex items-center justify-center min-h-[60vh]">
+        <p className="text-matera-muted">Loading wallets…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto py-2 md:py-4">
