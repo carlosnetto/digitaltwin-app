@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import { StoreProvider, useStore, clearWalletCache } from './store';
 import { Wallet as WalletType } from './types';
-import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode, RefreshCw, LogOut } from 'lucide-react';
+import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode, RefreshCw, LogOut, Sun, Moon } from 'lucide-react';
 import QRCode from 'react-qr-code';
 
 // Simple Toast component
@@ -1141,13 +1141,13 @@ function QRScannerModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function BottomNav({ onScanPress }: { onScanPress: () => void }) {
+function BottomNav({ onScanPress, theme, onThemeToggle }: { onScanPress: () => void; theme: string; onThemeToggle: () => void }) {
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-matera-card border-t border-white/5 md:hidden">
       <div className="flex justify-around items-end px-4 pt-2 pb-4">
         <button className="flex flex-col items-center gap-1 text-matera-green pb-1">
           <Wallet size={24} />
-          <span className="text-[10px] font-medium">Wallets</span>
+          <span className="text-[10px] font-medium">Accounts</span>
         </button>
 
         {/* Central raised QR scan button */}
@@ -1161,8 +1161,8 @@ function BottomNav({ onScanPress }: { onScanPress: () => void }) {
           <span className="text-[10px] font-medium text-matera-muted mt-0.5">Scan</span>
         </button>
 
-        <button className="flex flex-col items-center gap-1 text-matera-muted hover:text-white transition-colors pb-1">
-          <Settings size={24} />
+        <button onClick={onThemeToggle} className="flex flex-col items-center gap-1 text-matera-muted hover:text-white transition-colors pb-1">
+          {theme === 'dark' ? <Sun size={24} /> : <Moon size={24} />}
           <span className="text-[10px] font-medium">Settings</span>
         </button>
       </div>
@@ -1170,7 +1170,7 @@ function BottomNav({ onScanPress }: { onScanPress: () => void }) {
   );
 }
 
-function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }) {
+function Sidebar({ user, onLogout, theme, onThemeToggle }: { user: User; onLogout: () => void; theme: string; onThemeToggle: () => void }) {
   return (
     <div className="hidden md:flex flex-col w-64 bg-matera-card border-r border-white/5 h-screen fixed left-0 top-0 p-6">
       <div className="mb-10">
@@ -1183,13 +1183,14 @@ function Sidebar({ user, onLogout }: { user: User; onLogout: () => void }) {
       </div>
       <nav className="space-y-2 flex-1">
         <button className="w-full flex items-center gap-3 bg-matera-blue/20 text-matera-green px-4 py-3 rounded-xl font-medium">
-          <Wallet size={20} /> Wallets
+          <Wallet size={20} /> Accounts
         </button>
         <button className="w-full flex items-center gap-3 text-matera-muted hover:text-white hover:bg-white/5 px-4 py-3 rounded-xl font-medium transition-colors">
           <Activity size={20} /> Activity
         </button>
-        <button className="w-full flex items-center gap-3 text-matera-muted hover:text-white hover:bg-white/5 px-4 py-3 rounded-xl font-medium transition-colors">
-          <Settings size={20} /> Settings
+        <button onClick={onThemeToggle} className="w-full flex items-center gap-3 text-matera-muted hover:text-white hover:bg-white/5 px-4 py-3 rounded-xl font-medium transition-colors">
+          {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+          {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
         </button>
       </nav>
       <div className="border-t border-white/5 pt-4">
@@ -1310,6 +1311,14 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [theme, setTheme] = useState<string>(() => localStorage.getItem('dt_theme') ?? 'dark');
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('light', theme === 'light');
+    localStorage.setItem('dt_theme', theme);
+  }, [theme]);
+
+  const handleThemeToggle = useCallback(() => setTheme(t => t === 'dark' ? 'light' : 'dark'), []);
 
   useEffect(() => {
     fetch(`${import.meta.env.BASE_URL}api/auth/me`, { credentials: 'include' })
@@ -1335,9 +1344,9 @@ export default function App() {
   return (
     <StoreProvider>
       <div className="min-h-screen bg-matera-bg pb-20 md:pb-0 md:pl-64 animate-in fade-in duration-500">
-        <Sidebar user={user} onLogout={handleLogout} />
+        <Sidebar user={user} onLogout={handleLogout} theme={theme} onThemeToggle={handleThemeToggle} />
         <Dashboard user={user} onLogout={handleLogout} />
-        <BottomNav onScanPress={() => setShowScanner(true)} />
+        <BottomNav onScanPress={() => setShowScanner(true)} theme={theme} onThemeToggle={handleThemeToggle} />
         {showScanner && <QRScannerModal onClose={() => setShowScanner(false)} />}
       </div>
     </StoreProvider>

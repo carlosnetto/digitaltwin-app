@@ -17,6 +17,13 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
+html.light {
+  --color-matera-bg: #EFF2F7;
+  --color-matera-card: #FFFFFF;
+  --color-matera-text: #1A2744;
+  --color-matera-muted: #5A6A8A;
+}
+
 @keyframes qr-scan {
   0%, 100% { top: 4px; opacity: 0.9; }
   50%       { top: calc(100% - 6px); opacity: 0.6; }
