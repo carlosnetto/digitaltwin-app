@@ -343,3 +343,37 @@ A user bought $100 of USDC while her USD account held only $1.90, resulting in a
 
 ### Desktop sidebar Activity button removed
 The "Activity" button in the desktop sidebar nav had no `onClick` handler — it was a visual placeholder that did nothing. Removed to avoid confusing users.
+
+---
+
+## Mar 2026 — Decimal Precision: Frontend Inputs & API Truncation
+
+### Every currency/asset has its own decimal places — no assumptions
+The system treats every currency and asset uniformly: each has a `decimal_places` value stored in `digitaltwinapp.currencies` and cached in the frontend wallet list. There is no hardcoded assumption that fiat = 2 decimals or crypto = 6 decimals. Examples of why assumptions break:
+
+- USD: 2 — BRL: 2 — USDC: 6 — USDT: 6
+- JPY: 0 — KWD: 3 — ETH could be 18
+
+The fiat/crypto distinction in the UI is purely cultural — it drives which actions are shown (Buy/Sell for crypto, Convert for fiat). It has nothing to do with decimal precision.
+
+### Frontend: amount inputs enforce the correct decimal limit per currency
+All amount input fields across ConvertModal, BuyModal, SellModal, and SendModal now enforce the currency's `decimal_places` on every keystroke, using two mechanisms:
+
+1. **`sanitizeAmount(val, decimalPlaces)`** — strips non-numeric characters, enforces a single decimal point, and truncates the fractional part to `decimalPlaces` characters. Minus sign is rejected, so negative input is structurally impossible.
+
+2. **`decimalsFor(currency, wallets)`** — looks up `decimal_places` from the cached wallet list by currency code. No hardcoded constants. Called as `decimalsFor(wallet.currency, wallets)` for the primary field and `decimalsFor(fiatCurrency, wallets)` for the paired field — the same pattern regardless of asset type.
+
+3. **`type="text" inputMode="decimal"`** on all inputs — removes browser spinner arrows (which could decrement into negative territory or bypass the decimal limit) while keeping the numeric keyboard on mobile.
+
+Computed (mirror) fields — the amount automatically calculated on the other side of a conversion — also use `toFixed(decimalsFor(currency, wallets))` so they respect the target currency's precision.
+
+### API: truncation is enforced before every mini-core call
+`MiniCoreClient.createTransaction()` accepts `BigDecimal` (not `double`). Before every call, amounts are truncated with `RoundingMode.DOWN` to the currency's `decimal_places` from `digitaltwinapp.currencies`:
+
+- `ConversionService`: both `fromAmountBD` and `toAmountBD` are truncated to their respective currency's precision before being posted.
+- `WalletService.p2pTransfer`: the input amount is truncated to the sender's currency `decimal_places`.
+- `UserAccountProvisioningService`: welcome credit uses `new BigDecimal("10000.00")`.
+
+Mini-core enforces its own decimal limit and returns 422 on violation — the API-side truncation ensures we never reach that error in normal operation.
+
+**Rule:** decimal places are always read from `digitaltwinapp.currencies.decimal_places` (DB) or the frontend wallet cache — never hardcoded by asset class. Both layers (frontend input and API) enforce the limit independently.
