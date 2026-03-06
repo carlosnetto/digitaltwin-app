@@ -48,12 +48,28 @@ function mapApiWallet(w: ApiWallet): Wallet {
   };
 }
 
+const WALLET_CACHE_KEY = 'dt_wallets';
+
+function loadCachedWallets(): Wallet[] {
+  try {
+    const raw = localStorage.getItem(WALLET_CACHE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function clearWalletCache() {
+  localStorage.removeItem(WALLET_CACHE_KEY);
+}
+
 const StoreContext = createContext<StoreState | undefined>(undefined);
 
 export const StoreProvider = ({ children }: { children: ReactNode }) => {
-  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const cached = loadCachedWallets();
+  const [wallets, setWallets] = useState<Wallet[]>(cached);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [walletsLoading, setWalletsLoading] = useState(true);
+  const [walletsLoading, setWalletsLoading] = useState(cached.length === 0);
 
   const refreshWallets = useCallback(async () => {
     setWalletsLoading(true);
@@ -63,9 +79,11 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
       });
       if (!res.ok) return;
       const data: ApiWallet[] = await res.json();
-      setWallets(data.map(mapApiWallet));
+      const mapped = data.map(mapApiWallet);
+      setWallets(mapped);
+      localStorage.setItem(WALLET_CACHE_KEY, JSON.stringify(mapped));
     } catch {
-      // Leave wallets empty on network error
+      // Leave wallets as-is on network error (cached data still shown)
     } finally {
       setWalletsLoading(false);
     }

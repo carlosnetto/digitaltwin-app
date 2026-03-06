@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
-import { StoreProvider, useStore } from './store';
+import { StoreProvider, useStore, clearWalletCache } from './store';
 import { Wallet as WalletType } from './types';
 import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode } from 'lucide-react';
 import QRCode from 'react-qr-code';
@@ -1285,6 +1285,7 @@ export default function App() {
 
   const handleLogout = useCallback(async () => {
     await fetch(`${import.meta.env.BASE_URL}api/auth/logout`, { method: 'POST', credentials: 'include' });
+    clearWalletCache();
     setUser(null);
   }, []);
 
