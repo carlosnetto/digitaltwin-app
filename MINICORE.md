@@ -314,7 +314,7 @@ Accounts are created via `POST /api/accounts` with `product_type: "DDA"` and the
 
 ### Transaction Codes Used
 
-Every conversion creates 4 mini-core transactions. The codes depend on the operation type:
+#### Conversions (buy/sell/convert) — 4 mini-core transactions per operation
 
 | Operation | User debit | User credit | Pool credit | Pool debit |
 |-----------|-----------|------------|-------------|------------|
@@ -322,6 +322,19 @@ Every conversion creates 4 mini-core transactions. The codes depend on the opera
 | Sell (crypto→fiat) | 50003 Crypto Sale | 40005 Crypto Sale Proceeds | 10018 Internal Transfer In | 20021 Internal Transfer Out |
 | Convert (crypto→crypto) | 50002 Crypto Conversion Sent | 40002 Crypto Conversion Received | 10018 Internal Transfer In | 20021 Internal Transfer Out |
 | Convert (fiat→fiat) | 50006 Currency Conversion Out | 40006 Currency Conversion In | 10018 Internal Transfer In | 20021 Internal Transfer Out |
+
+#### P2P transfers — 2 mini-core transactions
+
+| Leg | Code | Description | Direction |
+|-----|------|-------------|-----------|
+| Sender | 20026 | P2P Sent | DEBIT |
+| Recipient | 10027 | P2P Received | CREDIT |
+
+#### Provisioning
+
+| Event | Code | Description | Direction |
+|-------|------|-------------|-----------|
+| New user welcome credit | 10001 | Cash Deposit | CREDIT (10,000 BRL) |
 
 All transactions are created with `status: "POSTED"` and `created_by: "digitaltwinapp-api"`.
 

@@ -31,12 +31,12 @@ api/
   src/main/java/.../
     client/MiniCoreClient.java       # getAccount, createAccount, createTransaction → localhost:5001
     controller/AuthController.java   # POST /api/auth/google, GET /api/auth/me, POST /api/auth/logout
-    controller/WalletController.java # GET /api/wallets, POST /api/wallets/convert
+    controller/WalletController.java # GET /api/wallets, transactions, rate, convert, p2p; GET /api/users/lookup
     listener/PostgresNotificationListener.java  # pg_notify daemon → provisions accounts on new user
-    model/                           # UserInfo, WalletDto, ConversionRequest, ConversionResultDto
+    model/                           # UserInfo, WalletDto, ConversionRequest, ConversionResultDto, P2pRequest
     service/GoogleAuthService.java   # token → userinfo → domain check → DB check; auto-inserts new users
-    service/WalletService.java       # live balances from mini-core per user
-    service/UserAccountProvisioningService.java # creates mini-core accounts; 60s catch-all @Scheduled
+    service/WalletService.java       # balances, transactions, rates, P2P transfer, user lookup
+    service/UserAccountProvisioningService.java # creates mini-core accounts + 10k BRL welcome credit; 60s catch-all @Scheduled
     service/ExchangeRateService.java # @Scheduled every 10min from open.er-api.com
     service/ConversionService.java   # 4 mini-core transactions + conversions table record
     config/WebConfig.java            # CORS: allowed origins from app.allowed-origins
@@ -49,10 +49,12 @@ api/
       005-create-currencies.xml      # currencies: USD=100, BRL=101, USDC=103, USDT=104
       006-create-user-accounts.xml   # user_accounts (user_id, currency_id, minicore_account_id)
       007-user-created-notify-trigger.xml  # pg_notify('user_created') on INSERT
-      008-currencies-add-is-fiat-logo.xml  # is_fiat BOOLEAN, logo_url VARCHAR
+      008-currencies-add-is-fiat-logo.xml  # is_fiat BOOLEAN, logo_url VARCHAR, decimal_places INT
       009-seed-liquidity-buffer.xml  # system account user_id=1, liquidity-buffer@system
       010-create-exchange-rates.xml  # 12 directional pairs; stablecoin pairs locked at 1.0
       011-create-conversions.xml     # conversions table with 4 tx IDs
+      012-create-p2p-transactions.xml # p2p_transactions (id, created_at TIMESTAMPTZ, amount, debit_tx_id, credit_tx_id)
+      013-simplify-p2p-transactions.xml # drop redundant user/currency FKs from p2p_transactions
     application.yml                  # port 8081, Liquibase, CORS (includes https://materalabs.us)
     application-local.yml            # gitignored — DB credentials
     application-local.yml.example    # template for new devs
@@ -179,20 +181,44 @@ Wallet balances are live — fetched from mini-core on every page load and after
 
 `digitaltwinapp.exchange_rates` holds all 12 directional pairs. Stablecoin pairs (USDC↔USD, USDT↔USD, USDC↔USDT) have `is_stablecoin_pair=true` and are never updated. Non-stablecoin pairs refresh every 10 minutes from `open.er-api.com` (free, no API key).
 
-## Buy/Sell Conversion
+## API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/auth/google` | Validate Google token, create session |
+| `GET` | `/api/auth/me` | Current session user |
+| `POST` | `/api/auth/logout` | Destroy session |
+| `GET` | `/api/wallets` | Live balances for all user accounts |
+| `GET` | `/api/wallets/transactions?currencyCode=X` | Up to 50 recent transactions, newest first |
+| `GET` | `/api/wallets/rate?from=X&to=Y` | Live exchange rate |
+| `POST` | `/api/wallets/convert` | Buy / sell / convert (4 mini-core txs) |
+| `POST` | `/api/wallets/p2p` | P2P transfer to another platform user |
+| `GET` | `/api/users/lookup?email=X` | Resolve email → name (P2P confirmation step) |
+
+## Buy/Sell/Convert
 
 `POST /api/wallets/convert` — body: `{ fromCurrencyCode, toCurrencyCode, fromAmount }`
 
-Four mini-core transactions are created per conversion:
+Operation type detected from `is_fiat` flags. Four mini-core transactions per conversion:
 
-| Leg | Direction | Code | Label |
-|-----|-----------|------|-------|
-| User's from_currency | DEBIT | 20026 | P2P Sent |
-| User's to_currency | CREDIT | 10027 | P2P Received |
-| Pool's from_currency | CREDIT | 10018 | Internal Transfer In |
-| Pool's to_currency | DEBIT | 20021 | Internal Transfer Out |
+| Operation | User debit | User credit | Pool credit | Pool debit |
+|---|---|---|---|---|
+| Buy (fiat→crypto) | 50005 | 40003 | 10018 | 20021 |
+| Sell (crypto→fiat) | 50003 | 40005 | 10018 | 20021 |
+| Convert (crypto↔crypto) | 50002 | 40002 | 10018 | 20021 |
+| Convert (fiat↔fiat) | 50006 | 40006 | 10018 | 20021 |
 
-All four tx IDs plus the applied rate are recorded in `digitaltwinapp.conversions`.
+All four tx IDs plus the applied rate are recorded in `digitaltwinapp.conversions`. Amounts truncated with `RoundingMode.DOWN` to `decimal_places` before sending to mini-core.
+
+## P2P Transfers
+
+`POST /api/wallets/p2p` — body: `{ recipientEmail, currencyCode, amount }`
+
+1. Resolves sender and recipient from DB; validates active status, shared currency account, sufficient balance
+2. Posts debit (20026 P2P Sent) on sender, credit (10027 P2P Received) on recipient
+3. Inserts into `digitaltwinapp.p2p_transactions` (id, created_at TIMESTAMPTZ, amount, debit_tx_id, credit_tx_id)
+
+`GET /api/users/lookup?email=X` — used by the frontend before the confirmation step to show the recipient's name. Returns `{ name }` or 404.
 
 ## QR Scanner
 

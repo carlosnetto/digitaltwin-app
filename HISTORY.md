@@ -253,3 +253,68 @@ All modals fetch the live exchange rate from `GET /api/wallets/rate?from=X&to=Y`
 **Lesson:** `Number(d.rate)` returns `NaN` when the fetch fails with a non-OK response (the error JSON has no `rate` field). Always check `r.ok` before parsing, and guard `isNaN()` before setting state.
 
 **Lesson:** Always truncate amounts to the target currency's decimal precision before calling mini-core. Use `RoundingMode.DOWN` — never round up a financial amount the user didn't agree to pay.
+
+---
+
+## Mar 2026 — Transactions, P2P Transfers & UX Polish
+
+### Live transaction history
+`GET /api/wallets/transactions?currencyCode=X` fetches up to 50 transactions from mini-core for the active account. Sorted by `transaction_id DESC` (explicit sort — not relying on insertion order). Descriptions are sentence-cased server-side before returning (`"DIRECT DEPOSIT - PAYROLL"` → `"Direct deposit - payroll"`). Capped at 50 with a footer notice when the limit is hit.
+
+**Lesson:** `Collections.reverse()` on the list returned by mini-core is fragile — depends on mini-core's undefined sort order. Sort explicitly on `transaction_id DESC` instead.
+
+### Currency-aware decimal display
+`WalletDto` now carries `decimal_places` from `digitaltwinapp.currencies`. Propagated through `store.tsx` → `Wallet` type and used for both balance display and transaction amount formatting. Values: 2 for USD/BRL, 6 for USDC/USDT.
+
+Previously both were hardcoded to 2 decimal places, causing USDC/USDT transactions to show e.g. `5.00` instead of `5.000000`.
+
+### Wallet metadata cache (localStorage)
+After the first successful `/api/wallets` response, the full wallet list (including `decimalPlaces`, currency names, account IDs) is stored in `localStorage` under `dt_wallets`. On subsequent page loads, cached data is displayed immediately; the API is still called to refresh live balances. Cache is cleared on logout.
+
+This means `decimal_places` and other metadata never need to be re-queried on page refresh — the DB hit only occurs when the balance needs updating.
+
+### Welcome credit for new users
+`UserAccountProvisioningService.provision()` now posts a `CREDIT` of 10,000 BRL with transaction code `10001` (Cash Deposit) immediately after the BRL mini-core account is created. New users land with funds already available to explore all features.
+
+### Refresh button on balance card
+Small `RefreshCw` icon added inline next to "Available Balance". Tapping it concurrently refreshes wallet balances (via `refreshWallets()`) and reloads the transaction list for the active account. Spins while loading; disabled to prevent double-trigger.
+
+### Google profile picture in header
+The hardcoded "CN" initials in the mobile header were replaced with the user's Google profile photo. Tapping it opens a dropdown showing the full name and a Sign out button (with `LogOut` icon). Desktop sidebar was unchanged — it already showed the profile.
+
+### Bottom nav and Settings
+- "Wallets" label renamed to "Accounts" (bottom nav and desktop sidebar)
+- Settings button opens a modal with:
+  - **Language:** English (static — no multi-language planned)
+  - **Timezone:** grouped dropdown for Brazil (BRT/AMT/ACT/FNT) and US (ET/CT/MT/PT/AKT/HST)
+- Selected timezone stored in `localStorage` (`dt_timezone`). Transaction timestamps converted to the selected timezone via `toLocaleString('en-US', { timeZone })`. Defaults to browser-detected timezone.
+- Transaction timestamps upgraded from date-only (`effective_date`) to full datetime with seconds (`created_at` field), displayed in the user's selected timezone.
+
+### Action menu — crypto vs. fiat
+Crypto wallets (USDC, USDT): **Receive / Send / Buy / Sell** — no Convert.
+Fiat wallets (USD, BRL): **Receive / Send / Convert** — no Buy/Sell.
+
+Previously crypto wallets also showed a Convert (crypto↔crypto) button. Removed to simplify the UX — the Buy/Sell path already handles cross-type conversion via the liquidity pool.
+
+### P2P transfers between platform users (migration 012–013)
+`POST /api/wallets/p2p` — internal transfer between any two platform users for the same currency:
+
+1. `GET /api/users/lookup?email=X` resolves recipient email → name for confirmation screen
+2. Frontend shows 3-step flow: enter amount + email → confirm with name → success
+3. Backend validates: not self-transfer, recipient exists and is active, recipient has the currency account, sender has sufficient balance
+4. Posts debit on sender (code 20026 P2P Sent) and credit on recipient (code 10027 P2P Received)
+5. Inserts into `digitaltwinapp.p2p_transactions`
+
+**`p2p_transactions` table (final schema after migrations 012 + 013):**
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | BIGINT | Auto-increment sequence |
+| `created_at` | TIMESTAMPTZ | UTC, `DEFAULT now()` |
+| `amount` | NUMERIC(20,8) | Transfer amount |
+| `debit_tx_id` | BIGINT | mini-core tx for the sender debit (20026) |
+| `credit_tx_id` | BIGINT | mini-core tx for the recipient credit (10027) |
+
+Migration 013 dropped `sender_user_id`, `recipient_user_id`, and `currency_id` — all redundant because each mini-core `transaction_id` already links to `account_id` → `user_accounts` → user and currency.
+
+**Lesson:** Don't denormalize when a FK chain already covers the relationship. The `debit_tx_id` → mini-core transaction → account → `user_accounts` → user is a complete, joinable path. Storing user IDs again just creates sync risk.
