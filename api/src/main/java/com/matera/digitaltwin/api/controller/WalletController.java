@@ -1,6 +1,7 @@
 package com.matera.digitaltwin.api.controller;
 
 import com.matera.digitaltwin.api.model.ConversionRequest;
+import com.matera.digitaltwin.api.model.P2pRequest;
 import com.matera.digitaltwin.api.model.ConversionResultDto;
 import com.matera.digitaltwin.api.model.UserInfo;
 import com.matera.digitaltwin.api.model.WalletDto;
@@ -64,6 +65,40 @@ public class WalletController {
             return ResponseEntity.ok(Map.of("rate", rate));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", "No rate found for " + from + " → " + to));
+        }
+    }
+
+    @GetMapping("/api/users/lookup")
+    public ResponseEntity<?> lookupUser(@RequestParam String email, HttpSession session) {
+        if (session.getAttribute("user") == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
+        }
+        String name = walletService.lookupUserName(email);
+        if (name == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "User not found"));
+        }
+        return ResponseEntity.ok(Map.of("name", name));
+    }
+
+    @PostMapping("/api/wallets/p2p")
+    public ResponseEntity<?> p2pTransfer(@RequestBody P2pRequest req, HttpSession session) {
+        UserInfo user = (UserInfo) session.getAttribute("user");
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
+        }
+        if (req.amount() <= 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Amount must be greater than zero"));
+        }
+        try {
+            Map<String, Object> result = walletService.p2pTransfer(
+                    user.email(), req.recipientEmail(), req.currencyCode(), req.amount());
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("P2P transfer failed: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Transfer failed: " + e.getMessage()));
         }
     }
 

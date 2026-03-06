@@ -99,6 +99,68 @@ public class WalletService {
         }).toList();
     }
 
+    public String lookupUserName(String email) {
+        try {
+            return jdbc.queryForObject(
+                    "SELECT name FROM digitaltwinapp.users WHERE email = ? AND status = 'active'",
+                    String.class, email);
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
+    }
+
+    public Map<String, Object> p2pTransfer(String senderEmail, String recipientEmail,
+                                           String currencyCode, double amount) {
+        if (senderEmail.equalsIgnoreCase(recipientEmail)) {
+            throw new IllegalArgumentException("Cannot send to yourself");
+        }
+
+        Long senderUserId = jdbc.queryForObject(
+                "SELECT user_id FROM digitaltwinapp.users WHERE email = ?", Long.class, senderEmail);
+
+        Long senderAccountId = jdbc.queryForObject("""
+                SELECT ua.minicore_account_id
+                FROM digitaltwinapp.user_accounts ua
+                JOIN digitaltwinapp.currencies c ON c.id = ua.currency_id
+                WHERE ua.user_id = ? AND c.code = ?
+                """, Long.class, senderUserId, currencyCode);
+
+        Long recipientUserId;
+        try {
+            recipientUserId = jdbc.queryForObject(
+                    "SELECT user_id FROM digitaltwinapp.users WHERE email = ? AND status = 'active'",
+                    Long.class, recipientEmail);
+        } catch (EmptyResultDataAccessException e) {
+            throw new IllegalArgumentException("Recipient not found");
+        }
+
+        Long recipientAccountId;
+        try {
+            recipientAccountId = jdbc.queryForObject("""
+                    SELECT ua.minicore_account_id
+                    FROM digitaltwinapp.user_accounts ua
+                    JOIN digitaltwinapp.currencies c ON c.id = ua.currency_id
+                    WHERE ua.user_id = ? AND c.code = ?
+                    """, Long.class, recipientUserId, currencyCode);
+        } catch (EmptyResultDataAccessException e) {
+            throw new IllegalArgumentException("Recipient has no " + currencyCode + " account");
+        }
+
+        Map<String, Object> senderAccount = miniCoreClient.getAccount(senderAccountId);
+        if (senderAccount == null) throw new IllegalStateException("Could not fetch sender balance");
+        double balance = ((Number) senderAccount.get("available_balance")).doubleValue();
+        if (balance < amount) throw new IllegalArgumentException("Insufficient balance");
+
+        long debitTxId  = miniCoreClient.createTransaction(senderAccountId,    20026, amount, "DEBIT",  recipientEmail);
+        long creditTxId = miniCoreClient.createTransaction(recipientAccountId, 10027, amount, "CREDIT", senderEmail);
+
+        if (debitTxId < 0 || creditTxId < 0) {
+            throw new IllegalStateException("Transfer failed — mini-core error");
+        }
+
+        return Map.of("debitTxId", debitTxId, "creditTxId", creditTxId);
+    }
+
     public BigDecimal getRate(String fromCode, String toCode) {
         return jdbc.queryForObject("""
                 SELECT er.rate

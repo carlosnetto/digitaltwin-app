@@ -977,35 +977,64 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
 }
 
 function SendModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void }) {
-  const { sendFunds } = useStore();
+  const { refreshWallets } = useStore();
   const [amount, setAmount] = useState('');
-  const [destination, setDestination] = useState('');
-  const [network, setNetwork] = useState(wallet.networks?.[0] || '');
-  const [success, setSuccess] = useState(false);
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [recipientName, setRecipientName] = useState<string | null>(null);
+  const [step, setStep] = useState<'input' | 'confirm' | 'success'>('input');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSend = () => {
-    try {
-      setError('');
-      const numAmount = parseFloat(amount);
-      if (isNaN(numAmount) || numAmount <= 0) throw new Error('Invalid amount');
-      if (!destination) throw new Error('Destination is required');
+  const handleLookup = async () => {
+    setError('');
+    const num = parseFloat(amount);
+    if (isNaN(num) || num <= 0) { setError('Enter a valid amount'); return; }
+    if (num > wallet.balance) { setError('Insufficient balance'); return; }
+    if (!recipientEmail) { setError('Enter recipient email'); return; }
 
-      sendFunds(wallet.id, numAmount, destination, network);
-      setSuccess(true);
-      setTimeout(onClose, 2000);
-    } catch (err: any) {
-      setError(err.message);
+    setLoading(true);
+    try {
+      const r = await fetch(`${import.meta.env.BASE_URL}api/users/lookup?email=${encodeURIComponent(recipientEmail)}`, { credentials: 'include' });
+      if (!r.ok) { setError('Recipient not found in this platform'); return; }
+      const d = await r.json();
+      setRecipientName(d.name);
+      setStep('confirm');
+    } catch {
+      setError('Could not look up recipient');
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (success) {
+  const handleConfirm = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const r = await fetch(`${import.meta.env.BASE_URL}api/wallets/p2p`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipientEmail, currencyCode: wallet.currency, amount: parseFloat(amount) }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setError(d.error ?? 'Transfer failed'); return; }
+      setStep('success');
+      refreshWallets();
+      setTimeout(onClose, 2500);
+    } catch {
+      setError('Transfer failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (step === 'success') {
     return (
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         <div className="bg-matera-card w-full max-w-sm rounded-3xl border border-white/10 p-8 text-center animate-in zoom-in-95">
           <CheckCircle2 size={64} className="text-matera-green mx-auto mb-4" />
-          <h3 className="text-2xl font-bold text-white mb-2">Sent Successfully</h3>
-          <p className="text-matera-muted">Your transaction has been recorded on the Digital Twin Account.</p>
+          <h3 className="text-2xl font-bold text-white mb-2">Sent!</h3>
+          <p className="text-matera-muted">{amount} {wallet.currency} sent to {recipientName}.</p>
         </div>
       </div>
     );
@@ -1020,68 +1049,76 @@ function SendModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
             <button onClick={onClose} className="text-matera-muted hover:text-white p-1"><X size={24} /></button>
           </div>
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-matera-muted mb-2">Amount</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <span className="text-matera-muted">{wallet.type === 'fiat' ? wallet.symbol : ''}</span>
-                </div>
-                <input
-                  type="number" min="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full bg-matera-bg border border-white/10 rounded-xl py-3 pl-8 pr-12 text-white focus:outline-none focus:border-matera-green"
-                />
-                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                  <span className="text-matera-muted">{wallet.type === 'crypto' ? wallet.symbol : ''}</span>
-                </div>
-              </div>
-              <p className="text-xs text-matera-muted mt-1 text-right">Available: {wallet.balance}</p>
-            </div>
-
-            {wallet.type === 'crypto' && wallet.networks && (
+          {step === 'input' && (
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-matera-muted mb-2">Network</label>
-                <select
-                  value={network}
-                  onChange={(e) => setNetwork(e.target.value)}
-                  className="w-full bg-matera-bg border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:border-matera-green"
-                >
-                  {wallet.networks.map(net => <option key={net} value={net}>{net}</option>)}
-                </select>
+                <label className="block text-sm font-medium text-matera-muted mb-2">Amount</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <span className="text-matera-muted">{wallet.type === 'fiat' ? wallet.symbol : ''}</span>
+                  </div>
+                  <input
+                    type="number" min="0"
+                    value={amount}
+                    onChange={e => setAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full bg-matera-bg border border-white/10 rounded-xl py-3 pl-8 pr-12 text-white focus:outline-none focus:border-matera-green"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    <span className="text-matera-muted">{wallet.type === 'crypto' ? wallet.symbol : ''}</span>
+                  </div>
+                </div>
+                <p className="text-xs text-matera-muted mt-1 text-right">
+                  Available: {wallet.balance.toLocaleString('en-US', { minimumFractionDigits: wallet.decimalPlaces, maximumFractionDigits: wallet.decimalPlaces })}
+                </p>
               </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-matera-muted mb-2">
-                {wallet.currency === 'BRL' ? 'Pix Alias (CPF/CNPJ, Email, Phone)' :
-                  wallet.currency === 'USD' ? 'Routing & Account Number' :
-                    'Destination Address'}
-              </label>
-              <input
-                type="text"
-                value={destination}
-                onChange={(e) => setDestination(e.target.value)}
-                placeholder={
-                  wallet.currency === 'BRL' ? 'Enter Pix key' :
-                    wallet.currency === 'USD' ? 'e.g. 021000021 123456789' :
-                      '0x...'
-                }
-                className="w-full bg-matera-bg border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:border-matera-green"
-              />
+              <div>
+                <label className="block text-sm font-medium text-matera-muted mb-2">Recipient Email</label>
+                <input
+                  type="email"
+                  value={recipientEmail}
+                  onChange={e => setRecipientEmail(e.target.value)}
+                  placeholder="recipient@matera.com"
+                  className="w-full bg-matera-bg border border-white/10 rounded-xl p-3 text-white focus:outline-none focus:border-matera-green"
+                />
+              </div>
+              {error && <p className="text-red-400 text-sm">{error}</p>}
+              <button
+                onClick={handleLookup}
+                disabled={loading}
+                className="w-full bg-matera-green text-matera-blue-dark font-semibold py-3 px-4 rounded-xl hover:bg-matera-green-dark transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Looking up…' : 'Next'}
+              </button>
             </div>
+          )}
 
-            {error && <p className="text-red-400 text-sm">{error}</p>}
-
-            <button
-              onClick={handleSend}
-              className="w-full bg-matera-green text-matera-blue-dark font-semibold py-3 px-4 rounded-xl hover:bg-matera-green-dark transition-colors mt-4"
-            >
-              Confirm Send
-            </button>
-          </div>
+          {step === 'confirm' && (
+            <div className="space-y-6">
+              <div className="bg-matera-bg rounded-2xl p-4 border border-white/10 space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-matera-muted">To</span>
+                  <div className="text-right">
+                    <p className="text-white font-medium">{recipientName}</p>
+                    <p className="text-matera-muted text-xs">{recipientEmail}</p>
+                  </div>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-matera-muted">Amount</span>
+                  <span className="text-white font-semibold">{parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: wallet.decimalPlaces, maximumFractionDigits: wallet.decimalPlaces })} {wallet.currency}</span>
+                </div>
+              </div>
+              {error && <p className="text-red-400 text-sm">{error}</p>}
+              <div className="flex gap-3">
+                <button onClick={() => { setStep('input'); setError(''); }} className="flex-1 bg-white/10 text-white font-semibold py-3 rounded-xl hover:bg-white/20 transition-colors">
+                  Back
+                </button>
+                <button onClick={handleConfirm} disabled={loading} className="flex-1 bg-matera-green text-matera-blue-dark font-semibold py-3 rounded-xl hover:bg-matera-green-dark transition-colors disabled:opacity-50">
+                  {loading ? 'Sending…' : 'Confirm'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
