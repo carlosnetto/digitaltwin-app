@@ -589,7 +589,10 @@ function ReceiveModal({ walletId, onClose }: { walletId: string, onClose: () => 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-4">
       <Toast message="Copied to clipboard!" visible={toastVisible} />
-      <div className="bg-matera-card w-full max-w-md rounded-3xl border border-white/10 overflow-hidden animate-in slide-in-from-bottom-8 md:slide-in-from-bottom-0 md:zoom-in-95 shadow-2xl">
+      <div className="relative bg-matera-card w-full max-w-md rounded-3xl border border-white/10 overflow-hidden animate-in slide-in-from-bottom-8 md:slide-in-from-bottom-0 md:zoom-in-95 shadow-2xl">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center z-10">
+          <span className="text-red-500/40 text-6xl font-black tracking-widest uppercase rotate-[-30deg] select-none">PROTOTYPE</span>
+        </div>
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-2xl font-bold text-white tracking-tight">Receive {wallet.currency}</h3>
