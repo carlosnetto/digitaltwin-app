@@ -462,3 +462,47 @@ This lets Cloudflare's canonical redirect logic run normally (trailing slash, ex
 **SPA fallback also fixed:** the original fallback used `pathname = '/index.html'`, which ASSETS redirects to `/` — a 307 that leaked to the browser. Changed to `pathname = '/'` directly, which ASSETS serves as 200 without redirect.
 
 **Lesson:** `env.ASSETS.fetch()` is not a transparent file reader — it enforces canonical URL redirects. Never pass `*/index.html` or bare directory paths and expect a 200. Intercept redirects from ASSETS and re-apply your base path before forwarding to the browser.
+
+---
+
+## Mar 2026 — Decoupled Tunnel Startup (Multi-Tunnel Machines)
+
+### Problem: `--url` silently loses to `~/.cloudflared/config.yml`
+
+When migrating the app to a new machine that already had another Cloudflare Tunnel running, `./tunnel-deploy.sh` appeared to start correctly (4 connections registered, correct tunnel UUID in logs) but all requests returned a bare `404` with no body — never reaching the Java API.
+
+Root cause: cloudflared always reads `~/.cloudflared/config.yml` by default, even when `--token` and `--url` are provided on the command line. The other tunnel's `ingress:` block in that file silently overrides `--url`. The tunnel connects to Cloudflare with the correct tunnel ID but routes all traffic using the wrong machine's ingress rules.
+
+Config resolution precedence (highest wins):
+
+| Source | Ingress authority |
+|---|---|
+| `--config FILE` with `ingress:` block | Wins — no other source consulted |
+| `~/.cloudflared/config.yml` with `ingress:` block | Wins over `--url` |
+| `--url http://...` flag | Only used when no config file defines ingress |
+
+**Lesson:** `--token` controls which tunnel connects to Cloudflare. It has no effect on ingress routing. `--url` is only a fallback — any `config.yml` on the machine beats it.
+
+### Fix: temp config file per tunnel launch
+
+`tunnel-deploy.sh` now writes a throwaway ingress config at startup and passes it via `--config`, completely bypassing `~/.cloudflared/config.yml`:
+
+```bash
+TMPCONFIG=$(mktemp /tmp/digitaltwin-tunnel.XXXXXX.yml)
+trap 'rm -f "$TMPCONFIG"' EXIT
+
+cat > "$TMPCONFIG" <<'YAML'
+ingress:
+  - service: http://localhost:8081
+YAML
+
+cloudflared tunnel --config "$TMPCONFIG" run --token "$TOKEN"
+```
+
+Key details:
+- `--config` is a **tunnel-level** flag — it must come before `run`, not after
+- `trap ... EXIT` cleans up the temp file even on Ctrl+C or SIGTERM
+- `--url` is omitted — the ingress block in the temp config makes it redundant
+- The other tunnel on the machine is completely unaffected
+
+The system now starts and routes correctly regardless of what other tunnels or cloudflared configurations exist on the machine.
