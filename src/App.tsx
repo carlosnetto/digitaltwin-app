@@ -221,12 +221,6 @@ function Dashboard() {
                         >
                           <Minus className="shrink-0" size={16} /> <span className="truncate">Sell</span>
                         </button>
-                        <button
-                          onClick={() => { setSelectedWallet(wallet); setActionType('convert'); }}
-                          className="flex-1 bg-white/10 text-white font-semibold py-2 px-1 sm:px-2 rounded-xl flex items-center justify-center gap-1 sm:gap-2 hover:bg-white/20 transition-colors border border-white/10 text-xs sm:text-sm"
-                        >
-                          <Repeat className="shrink-0" size={16} /> <span className="truncate">Convert</span>
-                        </button>
                       </>
                     ) : (
                       <button
