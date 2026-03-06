@@ -238,7 +238,7 @@ Login is Google OAuth restricted to `@matera.com` accounts:
 1. Enter amount + recipient email → **Next**
 2. API resolves email → recipient name displayed for confirmation
 3. **Confirm** → debit sender (20026) + credit recipient (10027)
-4. `p2p_transactions` row inserted; balance refreshed
+4. `p2p_transactions` row inserted; balance and transaction list auto-refreshed
 
 ---
 
@@ -268,6 +268,18 @@ All amounts truncated with `RoundingMode.DOWN` to the currency's `decimal_places
 - **iOS Safari:** Share → Add to Home Screen
 - **Android Chrome:** Menu → Install App (or banner prompt)
 - **Desktop Chrome:** Install icon in address bar
+
+---
+
+## Utility Scripts
+
+| Script | Purpose |
+|---|---|
+| `listusers.sh` | List all users in `digitaltwinapp.users` |
+| `listp2ptrans.sh` | List all P2P transactions with sender, recipient, amount, currency |
+| `listbuysellconvert.sh` | List all buy/sell/convert conversions with user, currencies, amounts, and all 4 pool tx IDs |
+| `transfer-data-pack.sh` | Pack DB dump + credential files into a timestamped zip for machine migration |
+| `transfer-data-unpack.sh` | Unpack the zip on the target machine: restore DB + copy credentials |
 
 ---
 

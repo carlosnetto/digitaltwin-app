@@ -336,7 +336,7 @@ function Dashboard({ user, onLogout, timezone }: { user: { name: string; picture
       )}
 
       {selectedWallet && actionType === 'send' && (
-        <SendModal wallet={selectedWallet} onClose={() => { setSelectedWallet(null); setActionType(null); }} />
+        <SendModal wallet={selectedWallet} onClose={() => { setSelectedWallet(null); setActionType(null); }} onSuccess={() => fetchTxs(selectedWallet.currency)} />
       )}
       {selectedWallet && actionType === 'buy' && (
         <BuyModal wallet={selectedWallet} onClose={() => { setSelectedWallet(null); setActionType(null); }} />
@@ -976,7 +976,7 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
   );
 }
 
-function SendModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void }) {
+function SendModal({ wallet, onClose, onSuccess }: { wallet: WalletType, onClose: () => void, onSuccess?: () => void }) {
   const { refreshWallets } = useStore();
   const [amount, setAmount] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
@@ -1020,6 +1020,7 @@ function SendModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
       if (!r.ok) { setError(d.error ?? 'Transfer failed'); return; }
       setStep('success');
       refreshWallets();
+      onSuccess?.();
       setTimeout(onClose, 2500);
     } catch {
       setError('Transfer failed');
