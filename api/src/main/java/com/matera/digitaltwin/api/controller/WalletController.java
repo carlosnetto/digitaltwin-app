@@ -44,6 +44,15 @@ public class WalletController {
         return ResponseEntity.ok(wallets);
     }
 
+    @GetMapping("/api/wallets/transactions")
+    public ResponseEntity<?> getTransactions(@RequestParam String currencyCode, HttpSession session) {
+        UserInfo user = (UserInfo) session.getAttribute("user");
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
+        }
+        return ResponseEntity.ok(walletService.getTransactions(user.email(), currencyCode));
+    }
+
     @GetMapping("/api/wallets/rate")
     public ResponseEntity<?> getRate(@RequestParam String from, @RequestParam String to,
                                      HttpSession session) {

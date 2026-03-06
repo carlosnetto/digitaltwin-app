@@ -9,6 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -54,6 +55,36 @@ public class WalletService {
                 """, userId);
 
         return rows.stream().map(this::toDto).toList();
+    }
+
+    public List<Map<String, Object>> getTransactions(String email, String currencyCode) {
+        Long userId;
+        try {
+            userId = jdbc.queryForObject(
+                    "SELECT user_id FROM digitaltwinapp.users WHERE email = ?", Long.class, email);
+        } catch (Exception e) {
+            return List.of();
+        }
+
+        Long minicoreAccountId;
+        try {
+            minicoreAccountId = jdbc.queryForObject("""
+                    SELECT ua.minicore_account_id
+                    FROM digitaltwinapp.user_accounts ua
+                    JOIN digitaltwinapp.currencies c ON c.id = ua.currency_id
+                    WHERE ua.user_id = ? AND c.code = ?
+                    """, Long.class, userId, currencyCode);
+        } catch (Exception e) {
+            return List.of();
+        }
+        if (minicoreAccountId == null) return List.of();
+
+        List<Map<String, Object>> txs = miniCoreClient.getTransactions(minicoreAccountId);
+
+        // mini-core returns oldest-first; reverse so most recent is first, then cap at 50
+        List<Map<String, Object>> reversed = new java.util.ArrayList<>(txs);
+        Collections.reverse(reversed);
+        return reversed.size() > 50 ? reversed.subList(0, 50) : reversed;
     }
 
     public BigDecimal getRate(String fromCode, String toCode) {

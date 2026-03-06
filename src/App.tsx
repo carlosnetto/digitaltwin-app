@@ -56,11 +56,22 @@ function CurrencyIcon({ currency, symbol, logoUrl }: { currency: string, symbol:
   return <span className="font-bold text-matera-green">{symbol}</span>;
 }
 
+interface MiniCoreTx {
+  transaction_id: number;
+  transaction_description: string;
+  amount: number;
+  direction: 'CREDIT' | 'DEBIT';
+  status: string;
+  effective_date: string;
+}
+
 function Dashboard() {
-  const { wallets, transactions } = useStore();
+  const { wallets } = useStore();
   const [selectedWallet, setSelectedWallet] = useState<WalletType | null>(null);
   const [actionType, setActionType] = useState<'send' | 'receive' | 'buy' | 'sell' | 'convert' | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [txs, setTxs] = useState<MiniCoreTx[]>([]);
+  const [txsCapped, setTxsCapped] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const getExplorerUrl = (network: string, txHash: string) => {
@@ -99,9 +110,19 @@ function Dashboard() {
   };
 
   const activeWallet = wallets[currentIndex];
-  const activeTransactions = activeWallet
-    ? transactions.filter(t => t.walletId === activeWallet.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    : [];
+
+  useEffect(() => {
+    if (!activeWallet) return;
+    setTxs([]);
+    setTxsCapped(false);
+    fetch(`${import.meta.env.BASE_URL}api/wallets/transactions?currencyCode=${activeWallet.currency}`, { credentials: 'include' })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((data: MiniCoreTx[]) => {
+        setTxs(data);
+        setTxsCapped(data.length === 50);
+      })
+      .catch(() => {});
+  }, [activeWallet?.currency]);
 
   if (!activeWallet) {
     return (
@@ -239,46 +260,33 @@ function Dashboard() {
           <span className="text-sm text-matera-muted">{activeWallet.currency}</span>
         </div>
 
-        {activeTransactions.length > 0 ? (
+        {txs.length > 0 ? (
           <div className="space-y-2">
-            {activeTransactions.map(tx => (
-              <div key={tx.id} className="bg-matera-card rounded-xl p-2 border border-white/5 flex justify-between items-center hover:border-white/10 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${tx.type === 'receive' ? 'bg-matera-green/10 text-matera-green' : 'bg-white/5 text-white'}`}>
-                    {tx.type === 'receive' ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
+            {txs.map(tx => {
+              const isCredit = tx.direction === 'CREDIT';
+              return (
+                <div key={tx.transaction_id} className="bg-matera-card rounded-xl p-2 border border-white/5 flex justify-between items-center hover:border-white/10 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isCredit ? 'bg-matera-green/10 text-matera-green' : 'bg-white/5 text-white'}`}>
+                      {isCredit ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
+                    </div>
+                    <div>
+                      <p className="text-white font-medium">{tx.transaction_description}</p>
+                      <p className="text-xs text-matera-muted">{new Date(tx.effective_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-white font-medium">{tx.description}</p>
-                    <p className="text-xs text-matera-muted">{new Date(tx.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-                    {/* 
-                      FEATURE: Multi-chain Off-chain Balances
-                      Since the user's balance is maintained off-chain in the Digital Twin Account,
-                      a single asset like USDC can have underlying on-chain transactions across
-                      multiple different networks (Ethereum, Solana, Base, etc.).
-                      We display the specific network's block explorer link for each crypto transaction.
-                    */}
-                    {tx.txHash && tx.network && (
-                      <a
-                        href={getExplorerUrl(tx.network, tx.txHash)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] text-matera-green hover:underline flex items-center gap-1 mt-1"
-                      >
-                        Tx: {tx.txHash.substring(0, 6)}...{tx.txHash.substring(tx.txHash.length - 4)}
-                        <ArrowUpRight size={10} />
-                      </a>
-                    )}
+                  <div className="text-right">
+                    <p className={`font-semibold ${isCredit ? 'text-matera-green' : 'text-red-400'}`}>
+                      {isCredit ? '+' : '-'}{tx.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+                    </p>
+                    <p className="text-xs text-matera-muted capitalize">{tx.status.toLowerCase()}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className={`font-semibold ${tx.type === 'receive' ? 'text-matera-green' : 'text-red-400'}`}>
-                    {tx.type === 'receive' ? '+' : '-'}
-                    {tx.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                  <p className="text-xs text-matera-muted capitalize">{tx.status}</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
+            {txsCapped && (
+              <p className="text-center text-xs text-matera-muted py-2">50 transactions displayed</p>
+            )}
           </div>
         ) : (
           <div className="bg-matera-card rounded-2xl p-8 border border-white/5 text-center">

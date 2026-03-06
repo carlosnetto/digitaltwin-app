@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Component
@@ -71,6 +72,23 @@ public class MiniCoreClient {
         } catch (Exception e) {
             log.warn("mini-core createAccount failed for account_number={}: {}", accountNumber, e.getMessage());
             return -1;
+        }
+    }
+
+    /**
+     * Fetches all transactions for an account, most recent first.
+     */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> getTransactions(long accountId) {
+        try {
+            List<Map<String, Object>> list = restClient.get()
+                    .uri(baseUrl + "/api/accounts/" + accountId + "/transactions")
+                    .retrieve()
+                    .body(List.class);
+            return list == null ? List.of() : list;
+        } catch (Exception e) {
+            log.warn("mini-core getTransactions failed for account_id={}: {}", accountId, e.getMessage());
+            return List.of();
         }
     }
 
