@@ -351,6 +351,21 @@ function Dashboard({ user, onLogout, timezone }: { user: { name: string; picture
   );
 }
 
+// Strips non-numeric characters, enforces a single decimal point, and
+// limits the number of decimal digits to `decimalPlaces`. Prevents
+// negative input (minus sign is rejected). Safe to call on every keystroke.
+function sanitizeAmount(val: string, decimalPlaces: number): string {
+  let s = val.replace(/[^0-9.]/g, '');
+  const dot = s.indexOf('.');
+  if (dot !== -1) {
+    // remove any extra dots after the first
+    s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '');
+    // truncate to allowed decimal places
+    s = s.slice(0, dot + 1 + decimalPlaces);
+  }
+  return s;
+}
+
 function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void }) {
   const { wallets, refreshWallets } = useStore();
   const [sourceAmount, setSourceAmount] = useState('');
@@ -376,16 +391,18 @@ function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => 
   }, [wallet.currency, targetWallet?.currency]);
 
   const handleSourceChange = (val: string) => {
-    setSourceAmount(val);
-    const num = parseFloat(val);
-    if (!isNaN(num) && rate !== null) setTargetAmount((num * rate).toFixed(8));
+    const s = sanitizeAmount(val, wallet.decimalPlaces);
+    setSourceAmount(s);
+    const num = parseFloat(s);
+    if (!isNaN(num) && rate !== null) setTargetAmount((num * rate).toFixed(targetWallet?.decimalPlaces ?? 2));
     else setTargetAmount('');
   };
 
   const handleTargetChange = (val: string) => {
-    setTargetAmount(val);
-    const num = parseFloat(val);
-    if (!isNaN(num) && rate !== null) setSourceAmount((num / rate).toFixed(8));
+    const s = sanitizeAmount(val, targetWallet?.decimalPlaces ?? 2);
+    setTargetAmount(s);
+    const num = parseFloat(s);
+    if (!isNaN(num) && rate !== null) setSourceAmount((num / rate).toFixed(wallet.decimalPlaces));
     else setSourceAmount('');
   };
 
@@ -448,7 +465,7 @@ function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => 
               <label className="block text-sm font-medium text-matera-muted mb-2">I want to convert</label>
               <div className="relative">
                 <input
-                  type="number" min="0"
+                  type="text" inputMode="decimal"
                   value={sourceAmount}
                   onChange={(e) => handleSourceChange(e.target.value)}
                   placeholder="0.00"
@@ -472,7 +489,7 @@ function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => 
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <input
-                    type="number" min="0"
+                    type="text" inputMode="decimal"
                     value={targetAmount}
                     onChange={(e) => handleTargetChange(e.target.value)}
                     placeholder="0.00"
@@ -688,16 +705,18 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
   }, [wallet.currency, fiatCurrency]);
 
   const handleCryptoChange = (val: string) => {
-    setCryptoAmount(val);
-    const num = parseFloat(val);
+    const s = sanitizeAmount(val, wallet.decimalPlaces);
+    setCryptoAmount(s);
+    const num = parseFloat(s);
     if (!isNaN(num) && rate !== null) setFiatAmount((num * rate).toFixed(2));
     else setFiatAmount('');
   };
 
   const handleFiatChange = (val: string) => {
-    setFiatAmount(val);
-    const num = parseFloat(val);
-    if (!isNaN(num) && rate !== null) setCryptoAmount((num / rate).toFixed(8));
+    const s = sanitizeAmount(val, 2);
+    setFiatAmount(s);
+    const num = parseFloat(s);
+    if (!isNaN(num) && rate !== null) setCryptoAmount((num / rate).toFixed(wallet.decimalPlaces));
     else setCryptoAmount('');
   };
 
@@ -760,7 +779,7 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
               <label className="block text-sm font-medium text-matera-muted mb-2">I want to buy</label>
               <div className="relative">
                 <input
-                  type="number" min="0"
+                  type="text" inputMode="decimal"
                   value={cryptoAmount}
                   onChange={(e) => handleCryptoChange(e.target.value)}
                   placeholder="0.00"
@@ -783,7 +802,7 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <input
-                    type="number" min="0"
+                    type="text" inputMode="decimal"
                     value={fiatAmount}
                     onChange={(e) => handleFiatChange(e.target.value)}
                     placeholder="0.00"
@@ -842,16 +861,18 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
   }, [wallet.currency, fiatCurrency]);
 
   const handleCryptoChange = (val: string) => {
-    setCryptoAmount(val);
-    const num = parseFloat(val);
+    const s = sanitizeAmount(val, wallet.decimalPlaces);
+    setCryptoAmount(s);
+    const num = parseFloat(s);
     if (!isNaN(num) && rate !== null) setFiatAmount((num * rate).toFixed(2));
     else setFiatAmount('');
   };
 
   const handleFiatChange = (val: string) => {
-    setFiatAmount(val);
-    const num = parseFloat(val);
-    if (!isNaN(num) && rate !== null) setCryptoAmount((num / rate).toFixed(8));
+    const s = sanitizeAmount(val, 2);
+    setFiatAmount(s);
+    const num = parseFloat(s);
+    if (!isNaN(num) && rate !== null) setCryptoAmount((num / rate).toFixed(wallet.decimalPlaces));
     else setCryptoAmount('');
   };
 
@@ -914,7 +935,7 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
               <label className="block text-sm font-medium text-matera-muted mb-2">I want to sell</label>
               <div className="relative">
                 <input
-                  type="number" min="0"
+                  type="text" inputMode="decimal"
                   value={cryptoAmount}
                   onChange={(e) => handleCryptoChange(e.target.value)}
                   placeholder="0.00"
@@ -937,7 +958,7 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <input
-                    type="number" min="0"
+                    type="text" inputMode="decimal"
                     value={fiatAmount}
                     onChange={(e) => handleFiatChange(e.target.value)}
                     placeholder="0.00"
@@ -1059,9 +1080,9 @@ function SendModal({ wallet, onClose, onSuccess }: { wallet: WalletType, onClose
                     <span className="text-matera-muted">{wallet.type === 'fiat' ? wallet.symbol : ''}</span>
                   </div>
                   <input
-                    type="number" min="0"
+                    type="text" inputMode="decimal"
                     value={amount}
-                    onChange={e => setAmount(e.target.value)}
+                    onChange={e => setAmount(sanitizeAmount(e.target.value, wallet.decimalPlaces))}
                     placeholder="0.00"
                     className="w-full bg-matera-bg border border-white/10 rounded-xl py-3 pl-8 pr-12 text-white focus:outline-none focus:border-matera-green"
                   />
