@@ -49,3 +49,6 @@ public/erd/
 
 # Maven build output
 **/target/
+
+# Transfer pack archives
+*.zip
