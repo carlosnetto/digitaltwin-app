@@ -17,6 +17,16 @@ body {
   font-family: 'Inter', sans-serif;
 }
 
+/* Hide browser-native spinner arrows on number inputs globally */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type=number] {
+  -moz-appearance: textfield;
+}
+
 
 @keyframes qr-scan {
   0%, 100% { top: 4px; opacity: 0.9; }
