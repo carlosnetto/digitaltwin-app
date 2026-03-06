@@ -18,5 +18,13 @@ fi
 
 TOKEN=$(cat "$TOKEN_FILE")
 
+TMPCONFIG=$(mktemp /tmp/digitaltwin-tunnel.XXXXXX.yml)
+trap 'rm -f "$TMPCONFIG"' EXIT
+
+cat > "$TMPCONFIG" <<'YAML'
+ingress:
+  - service: http://localhost:8081
+YAML
+
 echo "Starting digitaltwinapp-api tunnel → localhost:8081 ..."
-cloudflared tunnel run --token "$TOKEN" --url http://localhost:8081
+cloudflared tunnel run --config "$TMPCONFIG" --token "$TOKEN"
