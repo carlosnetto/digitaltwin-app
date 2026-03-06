@@ -158,19 +158,14 @@ public class WalletService {
             throw new IllegalStateException("Transfer failed — mini-core error");
         }
 
-        Long currencyId = jdbc.queryForObject(
-                "SELECT id FROM digitaltwinapp.currencies WHERE code = ?", Long.class, currencyCode);
-
         long p2pId = jdbc.queryForObject("""
-                INSERT INTO digitaltwinapp.p2p_transactions
-                    (sender_user_id, recipient_user_id, currency_id, amount, debit_tx_id, credit_tx_id)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO digitaltwinapp.p2p_transactions (amount, debit_tx_id, credit_tx_id)
+                VALUES (?, ?, ?)
                 RETURNING id
-                """, Long.class,
-                senderUserId, recipientUserId, currencyId, amount, debitTxId, creditTxId);
+                """, Long.class, amount, debitTxId, creditTxId);
 
-        log.info("P2P transfer #{}: {} {} from user_id={} to user_id={} — debit_tx={} credit_tx={}",
-                p2pId, amount, currencyCode, senderUserId, recipientUserId, debitTxId, creditTxId);
+        log.info("P2P transfer #{}: {} {} debit_tx={} credit_tx={}",
+                p2pId, amount, currencyCode, debitTxId, creditTxId);
 
         return Map.of("p2pId", p2pId, "debitTxId", debitTxId, "creditTxId", creditTxId);
     }
