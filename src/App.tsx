@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import { StoreProvider, useStore, clearWalletCache } from './store';
 import { Wallet as WalletType } from './types';
-import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode } from 'lucide-react';
+import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode, RefreshCw } from 'lucide-react';
 import QRCode from 'react-qr-code';
 
 // Simple Toast component
@@ -67,12 +67,13 @@ interface MiniCoreTx {
 }
 
 function Dashboard() {
-  const { wallets } = useStore();
+  const { wallets, refreshWallets } = useStore();
   const [selectedWallet, setSelectedWallet] = useState<WalletType | null>(null);
   const [actionType, setActionType] = useState<'send' | 'receive' | 'buy' | 'sell' | 'convert' | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [txs, setTxs] = useState<MiniCoreTx[]>([]);
   const [txsCapped, setTxsCapped] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const getExplorerUrl = (network: string, txHash: string) => {
@@ -112,18 +113,30 @@ function Dashboard() {
 
   const activeWallet = wallets[currentIndex];
 
-  useEffect(() => {
-    if (!activeWallet) return;
-    setTxs([]);
-    setTxsCapped(false);
-    fetch(`${import.meta.env.BASE_URL}api/wallets/transactions?currencyCode=${activeWallet.currency}`, { credentials: 'include' })
+  const fetchTxs = useCallback((currency: string) => {
+    fetch(`${import.meta.env.BASE_URL}api/wallets/transactions?currencyCode=${currency}`, { credentials: 'include' })
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then((data: MiniCoreTx[]) => {
         setTxs(data);
         setTxsCapped(data.length === 50);
       })
       .catch(() => {});
-  }, [activeWallet?.currency]);
+  }, []);
+
+  useEffect(() => {
+    if (!activeWallet) return;
+    setTxs([]);
+    setTxsCapped(false);
+    fetchTxs(activeWallet.currency);
+  }, [activeWallet?.currency, fetchTxs]);
+
+  const handleRefresh = useCallback(async () => {
+    if (!activeWallet || refreshing) return;
+    setRefreshing(true);
+    await refreshWallets();
+    fetchTxs(activeWallet.currency);
+    setRefreshing(false);
+  }, [activeWallet, refreshing, refreshWallets, fetchTxs]);
 
   if (!activeWallet) {
     return (
@@ -190,7 +203,14 @@ function Dashboard() {
                     </div>
                   </div>
 
-                  <p className="text-matera-muted mb-0 text-sm">Available Balance</p>
+                  <div className="flex items-center gap-2 mb-0">
+                    <p className="text-matera-muted text-sm">Available Balance</p>
+                    {index === currentIndex && (
+                      <button onClick={handleRefresh} disabled={refreshing} className="text-matera-muted hover:text-matera-green transition-colors disabled:opacity-40">
+                        <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
+                      </button>
+                    )}
+                  </div>
                   <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
                     {wallet.balance.toLocaleString('en-US', { minimumFractionDigits: wallet.decimalPlaces, maximumFractionDigits: wallet.decimalPlaces })}
                   </h2>
