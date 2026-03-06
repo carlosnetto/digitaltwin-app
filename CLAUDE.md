@@ -138,6 +138,14 @@ fetch('/api/auth/google', ...)
 
 The Vite dev server proxies `/digitaltwin-app/api/*` → `http://localhost:8081`. The Cloudflare Worker does the same in production via tunnel.
 
+### Financial Invariants (always enforce before posting to mini-core)
+
+Two rules that must hold for every operation that debits a user account:
+
+1. **Sufficient balance** — fetch `available_balance` via `MiniCoreClient.getAccount()` and compare against the debit amount *before* calling `createTransaction`. Mini-core has no negative-balance guard; it will happily overdraft. Both `ConversionService` and `WalletService.p2pTransfer` do this check.
+
+2. **Exact decimal precision** — always pass `BigDecimal` (never `double`) to `MiniCoreClient.createTransaction()`. Amounts must be truncated with `RoundingMode.DOWN` to the currency's `decimal_places` (USD/BRL=2, USDC/USDT=6) before the call. Mini-core enforces this and returns 422 on violation. Passing a `double` risks floating-point serialization producing extra digits (e.g. `5253.83924303` instead of `5253.83`).
+
 ### Frontend vs API vs Backoffice
 - **Frontend (`src/`)** — SPA. Fetches live wallet balances and drives buy/sell conversions via the API.
 - **API (`api/`)** — Spring Boot on port 8081. Auth, live balances, exchange rates, conversions. Connected to frontend and mini-core.
@@ -208,7 +216,7 @@ Operation type detected from `is_fiat` flags. Four mini-core transactions per co
 | Convert (crypto↔crypto) | 50002 | 40002 | 10018 | 20021 |
 | Convert (fiat↔fiat) | 50006 | 40006 | 10018 | 20021 |
 
-All four tx IDs plus the applied rate are recorded in `digitaltwinapp.conversions`. Amounts truncated with `RoundingMode.DOWN` to `decimal_places` before sending to mini-core.
+Before posting: `ConversionService` checks `available_balance >= fromAmount` via `MiniCoreClient.getAccount()` — insufficient balance returns 400. All amounts are passed as `BigDecimal` (truncated with `RoundingMode.DOWN` to `decimal_places`). All four tx IDs plus the applied rate are recorded in `digitaltwinapp.conversions`.
 
 ## P2P Transfers
 
