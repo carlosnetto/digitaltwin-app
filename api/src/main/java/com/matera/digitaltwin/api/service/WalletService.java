@@ -42,11 +42,12 @@ public class WalletService {
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 SELECT ua.minicore_account_id,
                        ua.account_number,
-                       c.id        AS currency_id,
+                       c.id             AS currency_id,
                        c.code,
                        c.name,
                        c.is_fiat,
-                       c.logo_url
+                       c.logo_url,
+                       c.decimal_places
                 FROM digitaltwinapp.user_accounts ua
                 JOIN digitaltwinapp.currencies c ON c.id = ua.currency_id
                 WHERE ua.user_id = ?
@@ -120,7 +121,8 @@ public class WalletService {
                 (String) row.get("logo_url"),
                 balance,
                 (String) row.get("account_number"),
-                minicoreAccountId
+                minicoreAccountId,
+                ((Number) row.get("decimal_places")).intValue()
         );
     }
 

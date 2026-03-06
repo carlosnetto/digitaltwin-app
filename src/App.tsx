@@ -192,7 +192,7 @@ function Dashboard() {
 
                   <p className="text-matera-muted mb-0 text-sm">Available Balance</p>
                   <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-                    {wallet.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {wallet.balance.toLocaleString('en-US', { minimumFractionDigits: wallet.decimalPlaces, maximumFractionDigits: wallet.decimalPlaces })}
                   </h2>
 
                   <div className="flex gap-2 sm:gap-4">

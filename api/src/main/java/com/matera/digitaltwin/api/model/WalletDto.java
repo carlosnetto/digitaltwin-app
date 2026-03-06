@@ -13,5 +13,6 @@ public record WalletDto(
         String logoUrl,          // relative asset path for crypto logos; null for fiat (flag rendered by frontend)
         double balance,          // available_balance from mini-core
         String accountNumber,    // account number in mini-core (user_id * 1000 + currency_id)
-        long minicoreAccountId   // account_id in mini-core — for future transaction API calls
+        long minicoreAccountId,  // account_id in mini-core — for future transaction API calls
+        int decimalPlaces        // number of decimal places for this currency (e.g. 2 for USD/BRL, 6 for USDC/USDT)
 ) {}

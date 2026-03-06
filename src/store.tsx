@@ -30,6 +30,7 @@ interface ApiWallet {
   balance: number;
   accountNumber: string;
   minicoreAccountId: number;
+  decimalPlaces: number;
 }
 
 function mapApiWallet(w: ApiWallet): Wallet {
@@ -41,6 +42,7 @@ function mapApiWallet(w: ApiWallet): Wallet {
     type: w.isFiat ? 'fiat' : 'crypto',
     logoUrl: w.logoUrl,
     balance: w.balance,
+    decimalPlaces: w.decimalPlaces,
     receiveDetails: null,
     networks: NETWORKS_MAP[w.currency],
   };
