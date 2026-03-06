@@ -84,7 +84,17 @@ public class WalletService {
         // mini-core returns oldest-first; reverse so most recent is first, then cap at 50
         List<Map<String, Object>> reversed = new java.util.ArrayList<>(txs);
         Collections.reverse(reversed);
-        return reversed.size() > 50 ? reversed.subList(0, 50) : reversed;
+        List<Map<String, Object>> capped = reversed.size() > 50 ? reversed.subList(0, 50) : reversed;
+
+        // Format description: "DIRECT DEPOSIT - PAYROLL" → "Direct deposit - payroll"
+        return capped.stream().map(tx -> {
+            String raw = (String) tx.get("transaction_description");
+            if (raw == null || raw.isEmpty()) return tx;
+            String formatted = Character.toUpperCase(raw.charAt(0)) + raw.substring(1).toLowerCase();
+            Map<String, Object> copy = new java.util.HashMap<>(tx);
+            copy.put("transaction_description", formatted);
+            return copy;
+        }).toList();
     }
 
     public BigDecimal getRate(String fromCode, String toCode) {
