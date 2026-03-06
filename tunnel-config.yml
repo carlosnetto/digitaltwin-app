@@ -1,0 +1,5 @@
+# Cloudflare Tunnel ingress config for digitaltwinapp-api → localhost:8081.
+# No secrets here — tunnel identity and credentials come from .tunnel-token (gitignored).
+# Passed via --config to avoid conflicts with other tunnels' ~/.cloudflared/config.yml.
+ingress:
+  - service: http://localhost:8081

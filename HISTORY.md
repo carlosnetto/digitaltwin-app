@@ -483,26 +483,26 @@ Config resolution precedence (highest wins):
 
 **Lesson:** `--token` controls which tunnel connects to Cloudflare. It has no effect on ingress routing. `--url` is only a fallback — any `config.yml` on the machine beats it.
 
-### Fix: temp config file per tunnel launch
+### Fix: committed `tunnel-config.yml` per project
 
-`tunnel-deploy.sh` now writes a throwaway ingress config at startup and passes it via `--config`, completely bypassing `~/.cloudflared/config.yml`:
+`tunnel-config.yml` is committed to the repo containing only the ingress rule. `tunnel-deploy.sh` points `--config` to it, completely bypassing `~/.cloudflared/config.yml`:
 
-```bash
-TMPCONFIG=$(mktemp /tmp/digitaltwin-tunnel.XXXXXX.yml)
-trap 'rm -f "$TMPCONFIG"' EXIT
-
-cat > "$TMPCONFIG" <<'YAML'
+```yaml
+# tunnel-config.yml — no secrets, safe to commit
 ingress:
   - service: http://localhost:8081
-YAML
+```
 
-cloudflared tunnel --config "$TMPCONFIG" run --token "$TOKEN"
+```bash
+CONFIG_FILE="$(dirname "$0")/tunnel-config.yml"
+cloudflared tunnel --config "$CONFIG_FILE" run --token "$TOKEN"
 ```
 
 Key details:
 - `--config` is a **tunnel-level** flag — it must come before `run`, not after
-- `trap ... EXIT` cleans up the temp file even on Ctrl+C or SIGTERM
-- `--url` is omitted — the ingress block in the temp config makes it redundant
+- `--url` is omitted — the ingress block in the config makes it redundant
+- The config has no secrets — tunnel identity and credentials come from `--token` (read from `.tunnel-token`, gitignored)
+- The config travels with the repo — `git pull` on a new machine is sufficient, no manual setup
 - The other tunnel on the machine is completely unaffected
 
 The system now starts and routes correctly regardless of what other tunnels or cloudflared configurations exist on the machine.

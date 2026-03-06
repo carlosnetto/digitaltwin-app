@@ -17,14 +17,7 @@ if [ ! -f "$TOKEN_FILE" ]; then
 fi
 
 TOKEN=$(cat "$TOKEN_FILE")
-
-TMPCONFIG=$(mktemp /tmp/digitaltwin-tunnel.XXXXXX.yml)
-trap 'rm -f "$TMPCONFIG"' EXIT
-
-cat > "$TMPCONFIG" <<'YAML'
-ingress:
-  - service: http://localhost:8081
-YAML
+CONFIG_FILE="$(dirname "$0")/tunnel-config.yml"
 
 echo "Starting digitaltwinapp-api tunnel → localhost:8081 ..."
-cloudflared tunnel --config "$TMPCONFIG" run --token "$TOKEN"
+cloudflared tunnel --config "$CONFIG_FILE" run --token "$TOKEN"
