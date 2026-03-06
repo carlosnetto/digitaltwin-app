@@ -66,6 +66,9 @@ public class UserAccountProvisioningService {
         }
     }
 
+    private static final int TX_CASH_DEPOSIT = 10001;
+    private static final double WELCOME_BRL_AMOUNT = 10_000.0;
+
     private void provision(long userId, Map<String, Object> currencyRow) {
         int currencyId   = ((Number) currencyRow.get("id")).intValue();
         String code      = (String) currencyRow.get("code");
@@ -87,6 +90,16 @@ public class UserAccountProvisioningService {
 
         log.info("Provisioned account {} ({}) for user_id={} → minicore_account_id={}",
                 accountNumber, code, userId, minicoreAccountId);
+
+        if ("BRL".equals(code)) {
+            long txId = miniCoreClient.createTransaction(
+                    minicoreAccountId, TX_CASH_DEPOSIT, WELCOME_BRL_AMOUNT, "CREDIT", null);
+            if (txId >= 0) {
+                log.info("Welcome credit of {} BRL posted for user_id={} → tx_id={}", WELCOME_BRL_AMOUNT, userId, txId);
+            } else {
+                log.warn("Welcome credit failed for user_id={} account={}", userId, minicoreAccountId);
+            }
+        }
     }
 
     /** Currencies not yet provisioned for a specific user. */
