@@ -383,17 +383,27 @@ function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => 
   const targetOptions = wallets.filter(w => w.type === wallet.type && w.id !== wallet.id);
   const [targetWalletId, setTargetWalletId] = useState(targetOptions[0]?.id || '');
 
+  // If wallets loaded after mount (e.g. no cache during tunnel outage), pick the first target
+  useEffect(() => {
+    if (!targetWalletId && targetOptions.length > 0) {
+      setTargetWalletId(targetOptions[0].id);
+    }
+  }, [targetOptions.length, targetWalletId]);
+
   const targetWallet = wallets.find(w => w.id === targetWalletId);
   const [rate, setRate] = useState<number | null>(null);
+  const [rateError, setRateError] = useState(false);
+  const [rateKey, setRateKey] = useState(0);
 
   useEffect(() => {
     if (!targetWallet) return;
     setRate(null);
+    setRateError(false);
     fetch(`${import.meta.env.BASE_URL}api/wallets/rate?from=${wallet.currency}&to=${targetWallet.currency}`, { credentials: 'include' })
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-      .then(d => { const v = Number(d.rate); if (!isNaN(v)) setRate(v); })
-      .catch(() => {});
-  }, [wallet.currency, targetWallet?.currency]);
+      .then(d => { const v = Number(d.rate); if (!isNaN(v)) setRate(v); else throw new Error(); })
+      .catch(() => setRateError(true));
+  }, [wallet.currency, targetWallet?.currency, rateKey]);
 
   const handleSourceChange = (val: string) => {
     const s = sanitizeAmount(val, decimalsFor(wallet.currency, wallets));
@@ -511,10 +521,12 @@ function ConvertModal({ wallet, onClose }: { wallet: WalletType, onClose: () => 
                   ))}
                 </select>
               </div>
-              <p className="text-xs text-matera-muted mt-2 text-right">
+              <p className="text-xs mt-2 text-right">
                 {rate !== null
-                  ? `Exchange Rate: 1 ${wallet.currency} = ${rate.toFixed(4)} ${targetWallet?.currency}`
-                  : 'Loading rate…'}
+                  ? <span className="text-matera-muted">{`Exchange Rate: 1 ${wallet.currency} = ${rate.toFixed(4)} ${targetWallet?.currency}`}</span>
+                  : rateError
+                    ? <button onClick={() => setRateKey(k => k + 1)} className="text-red-400 hover:text-red-300">Could not load rate — tap to retry</button>
+                    : <span className="text-matera-muted">Loading rate…</span>}
               </p>
             </div>
 
@@ -696,6 +708,8 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
   const [fiatAmount, setFiatAmount] = useState('');
   const [fiatCurrency, setFiatCurrency] = useState<'USD' | 'BRL'>('USD');
   const [rate, setRate] = useState<number | null>(null);
+  const [rateError, setRateError] = useState(false);
+  const [rateKey, setRateKey] = useState(0);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -703,11 +717,12 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
   // Fetch live rate: 1 crypto = X fiat
   useEffect(() => {
     setRate(null);
+    setRateError(false);
     fetch(`${import.meta.env.BASE_URL}api/wallets/rate?from=${wallet.currency}&to=${fiatCurrency}`, { credentials: 'include' })
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-      .then(d => { const v = Number(d.rate); if (!isNaN(v)) setRate(v); })
-      .catch(() => {});
-  }, [wallet.currency, fiatCurrency]);
+      .then(d => { const v = Number(d.rate); if (!isNaN(v)) setRate(v); else throw new Error(); })
+      .catch(() => setRateError(true));
+  }, [wallet.currency, fiatCurrency, rateKey]);
 
   const handleCryptoChange = (val: string) => {
     const s = sanitizeAmount(val, decimalsFor(wallet.currency, wallets));
@@ -823,10 +838,12 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
                   <option value="BRL">BRL</option>
                 </select>
               </div>
-              <p className="text-xs text-matera-muted mt-2 text-right">
+              <p className="text-xs mt-2 text-right">
                 {rate !== null
-                  ? `Exchange Rate: 1 ${wallet.currency} = ${rate.toFixed(4)} ${fiatCurrency}`
-                  : 'Loading rate…'}
+                  ? <span className="text-matera-muted">{`Exchange Rate: 1 ${wallet.currency} = ${rate.toFixed(4)} ${fiatCurrency}`}</span>
+                  : rateError
+                    ? <button onClick={() => setRateKey(k => k + 1)} className="text-red-400 hover:text-red-300">Could not load rate — tap to retry</button>
+                    : <span className="text-matera-muted">Loading rate…</span>}
               </p>
             </div>
 
@@ -852,6 +869,8 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
   const [fiatAmount, setFiatAmount] = useState('');
   const [fiatCurrency, setFiatCurrency] = useState<'USD' | 'BRL'>('USD');
   const [rate, setRate] = useState<number | null>(null);
+  const [rateError, setRateError] = useState(false);
+  const [rateKey, setRateKey] = useState(0);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -859,11 +878,12 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
   // Fetch live rate: 1 crypto = X fiat
   useEffect(() => {
     setRate(null);
+    setRateError(false);
     fetch(`${import.meta.env.BASE_URL}api/wallets/rate?from=${wallet.currency}&to=${fiatCurrency}`, { credentials: 'include' })
-      .then(r => r.json())
-      .then(d => setRate(Number(d.rate)))
-      .catch(() => {});
-  }, [wallet.currency, fiatCurrency]);
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(d => { const v = Number(d.rate); if (!isNaN(v)) setRate(v); else throw new Error(); })
+      .catch(() => setRateError(true));
+  }, [wallet.currency, fiatCurrency, rateKey]);
 
   const handleCryptoChange = (val: string) => {
     const s = sanitizeAmount(val, decimalsFor(wallet.currency, wallets));
@@ -979,10 +999,12 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
                   <option value="BRL">BRL</option>
                 </select>
               </div>
-              <p className="text-xs text-matera-muted mt-2 text-right">
+              <p className="text-xs mt-2 text-right">
                 {rate !== null
-                  ? `Exchange Rate: 1 ${wallet.currency} = ${rate.toFixed(4)} ${fiatCurrency}`
-                  : 'Loading rate…'}
+                  ? <span className="text-matera-muted">{`Exchange Rate: 1 ${wallet.currency} = ${rate.toFixed(4)} ${fiatCurrency}`}</span>
+                  : rateError
+                    ? <button onClick={() => setRateKey(k => k + 1)} className="text-red-400 hover:text-red-300">Could not load rate — tap to retry</button>
+                    : <span className="text-matera-muted">Loading rate…</span>}
               </p>
             </div>
 
