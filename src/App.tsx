@@ -63,6 +63,7 @@ interface MiniCoreTx {
   direction: 'CREDIT' | 'DEBIT';
   status: string;
   effective_date: string;
+  created_at: string;
 }
 
 function Dashboard() {
@@ -266,7 +267,7 @@ function Dashboard() {
                     </div>
                     <div>
                       <p className="text-white font-medium">{tx.transaction_description}</p>
-                      <p className="text-xs text-matera-muted">{new Date(tx.effective_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                      <p className="text-xs text-matera-muted">{new Date(tx.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
                     </div>
                   </div>
                   <div className="text-right">
