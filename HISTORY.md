@@ -406,3 +406,59 @@ Any network error or non-ok HTTP response was swallowed silently. Rate stayed `n
 
 ### PROTOTYPE watermark on ReceiveModal
 The Receive flow generates QR codes and account details that are simulated (not real banking infrastructure). A diagonal red semi-transparent "PROTOTYPE" watermark was added over the modal to make this clear to anyone who sees it. Implemented as an absolutely-positioned `pointer-events-none` overlay so it doesn't block any interactions.
+
+---
+
+## Mar 2026 — SchemaSpy ERD + Cloudflare Sub-path Static Serving
+
+### SchemaSpy ERD for `digitaltwinapp` schema
+Added a SchemaSpy ERD for the API database (`digitaltwinapp` schema) mirroring the existing backoffice one. Configuration:
+
+- `api/docker-compose.yml` — runs `schemaspy/schemaspy` with `network_mode: host`; volume mounts to `../public/erd` so generated output lands directly in the frontend's `public/erd/` directory, which Vite copies to `dist/erd/` at build time
+- Output gitignored (`public/erd/` added to `.gitignore` alongside `backoffice/docs/erd/`)
+- Served publicly at `materalabs.us/digitaltwin-app/erd/`
+
+To regenerate and redeploy:
+```bash
+cd api
+DB_HOST=localhost DB_PORT=5432 DB_NAME=banking_system \
+  DB_USERNAME=admin DB_PASSWORD=mysecretpassword DB_SCHEMA=digitaltwinapp \
+  docker-compose run schemaspy
+cd .. && npm run deploy
+```
+
+SchemaSpy generates 100% relative HTML — all asset references (`bower/...`, `tables/...`) are relative paths. The generated output can be relocated to any sub-path without modification.
+
+### Cloudflare ASSETS binding — canonical redirect behavior
+Serving the ERD from a sub-path exposed a class of bugs in how Cloudflare's `env.ASSETS` binding handles directory-like paths.
+
+**Behavior discovered:**
+- `env.ASSETS.fetch('/erd')` → **307** to `/erd/` (adds trailing slash for directory)
+- `env.ASSETS.fetch('/erd/index.html')` → **307** to `/erd/` (pretty-URL: removes `index.html` suffix)
+- `env.ASSETS.fetch('/erd/columns.html')` → **307** to `/erd/columns` (removes `.html` extension)
+- `env.ASSETS.fetch('/erd/')` → **200** with `dist/erd/index.html` content
+- `env.ASSETS.fetch('/')` → **200** with `dist/index.html` content (root index is not redirected)
+
+The redirects are **root-relative** (e.g. `location: /erd/`). When the worker returned them directly to the browser, the browser followed to `materalabs.us/erd/` — losing the `/digitaltwin-app/` base path entirely.
+
+**Two earlier failed approaches:**
+1. Try `{path}/index.html` before `{path}` — ASSETS redirects `index.html` too (307), so the redirect still leaked.
+2. Try `{path}/index.html` only on 404 — ASSETS returns 307 (not 404) for directory paths, so the 404 branch never fired.
+
+**Correct fix:** intercept any 301/307 from `env.ASSETS.fetch()` with a root-relative `location` header and re-issue the redirect as an absolute URL with the base path prepended:
+
+```typescript
+if (assetResponse.status === 301 || assetResponse.status === 307) {
+  const location = assetResponse.headers.get('location') ?? '';
+  if (location.startsWith('/')) {
+    const redirectUrl = new URL(basePath + location, url.origin);
+    return Response.redirect(redirectUrl.toString(), assetResponse.status);
+  }
+}
+```
+
+This lets Cloudflare's canonical redirect logic run normally (trailing slash, extension stripping) while keeping the browser under `/digitaltwin-app/`.
+
+**SPA fallback also fixed:** the original fallback used `pathname = '/index.html'`, which ASSETS redirects to `/` — a 307 that leaked to the browser. Changed to `pathname = '/'` directly, which ASSETS serves as 200 without redirect.
+
+**Lesson:** `env.ASSETS.fetch()` is not a transparent file reader — it enforces canonical URL redirects. Never pass `*/index.html` or bare directory paths and expect a 200. Intercept redirects from ASSETS and re-apply your base path before forwarding to the browser.

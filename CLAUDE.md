@@ -144,7 +144,75 @@ Two rules that must hold for every operation that debits a user account:
 
 1. **Sufficient balance** — fetch `available_balance` via `MiniCoreClient.getAccount()` and compare against the debit amount *before* calling `createTransaction`. Mini-core has no negative-balance guard; it will happily overdraft. Both `ConversionService` and `WalletService.p2pTransfer` do this check.
 
-2. **Exact decimal precision** — always pass `BigDecimal` (never `double`) to `MiniCoreClient.createTransaction()`. Amounts must be truncated with `RoundingMode.DOWN` to the currency's `decimal_places` (USD/BRL=2, USDC/USDT=6) before the call. Mini-core enforces this and returns 422 on violation. Passing a `double` risks floating-point serialization producing extra digits (e.g. `5253.83924303` instead of `5253.83`).
+2. **Exact decimal precision** — always pass `BigDecimal` (never `double`) to `MiniCoreClient.createTransaction()`. Amounts must be truncated with `RoundingMode.DOWN` to the currency's `decimal_places` from the DB before the call. Mini-core enforces this and returns 422 on violation. Passing a `double` risks floating-point serialization producing extra digits (e.g. `5253.83924303` instead of `5253.83`).
+
+Do **not** hardcode decimal places by currency type (fiat=2, crypto=6). Always read from `decimal_places` — different fiat currencies have different precision (e.g. JPY=0).
+
+### Amount Input Validation (frontend)
+
+All amount inputs use `type="text" inputMode="decimal"` (not `type="number"`) to avoid browser spinner arrows and allow precise keystroke-level control.
+
+Two helpers in `App.tsx` enforce precision:
+
+```typescript
+// Strips non-numeric chars, enforces one decimal point, truncates at decimalPlaces
+function sanitizeAmount(val: string, decimalPlaces: number): string {
+  let s = val.replace(/[^0-9.]/g, '');
+  const dot = s.indexOf('.');
+  if (dot !== -1) {
+    s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '');
+    s = s.slice(0, dot + 1 + decimalPlaces);
+  }
+  return s;
+}
+
+// Looks up decimal_places from the in-memory wallet cache (no hardcoded fiat/crypto assumption)
+function decimalsFor(currency: string, wallets: WalletType[]): number {
+  return wallets.find(w => w.currency === currency)?.decimalPlaces ?? 0;
+}
+```
+
+Every `onChange` handler calls `sanitizeAmount(val, decimalsFor(currency, wallets))`. The `wallets` list comes from `useStore()` and already has `decimalPlaces` from the API.
+
+### Rate Fetch Error Handling (frontend)
+
+Rate fetches can fail (network, tunnel outage). Never silently swallow `.catch(() => {})` — users will see "Loading rate…" forever with no way to recover.
+
+Pattern used in all three modals (ConvertModal, BuyModal, SellModal):
+
+```typescript
+const [rateError, setRateError] = useState(false);
+const [rateKey, setRateKey] = useState(0);  // incrementing triggers retry
+
+useEffect(() => {
+  setRate(null);
+  setRateError(false);
+  fetch(...)
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(data => {
+      const parsed = parseFloat(data.rate);
+      if (!isNaN(parsed)) setRate(parsed);
+      else setRateError(true);
+    })
+    .catch(() => setRateError(true));
+}, [fromCurrency, toCurrency, rateKey]);  // rateKey in deps = retry mechanism
+```
+
+Rate display is tri-state: rate shown / error+retry button / loading spinner. Never show the Confirm button while `rate === null`.
+
+### PROTOTYPE Watermark
+
+`ReceiveModal` (and any other modal showing placeholder UI) uses an absolute overlay:
+
+```tsx
+<div className="pointer-events-none absolute inset-0 flex items-center justify-center z-10">
+  <span className="text-red-500/40 text-6xl font-black tracking-widest uppercase rotate-[-30deg] select-none">
+    PROTOTYPE
+  </span>
+</div>
+```
+
+`pointer-events-none` ensures the watermark does not block interaction. Apply to any modal that shows simulated data (QR codes, receive addresses) until real implementation exists.
 
 ### Frontend vs API vs Backoffice
 - **Frontend (`src/`)** — SPA. Fetches live wallet balances and drives buy/sell conversions via the API.

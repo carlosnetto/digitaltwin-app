@@ -21,6 +21,7 @@ A multicurrency fintech wallet prototype built on Matera's Digital Twin ledger. 
 | **Welcome credit** | New users receive 10,000 BRL (Cash Deposit, code 10001) on first login |
 | **Settings** | Language (English) and timezone selector (Brazil + US zones) |
 | **PWA** | Installable on iOS, Android, and desktop Chrome |
+| **Receive (prototype)** | Shows placeholder QR / address with a "PROTOTYPE" watermark — real camera/address wiring not yet implemented |
 
 ---
 
@@ -252,7 +253,11 @@ Timezone preference is stored in `localStorage` under `dt_timezone`. Defaults to
 
 ## Amount Precision
 
-All amounts truncated with `RoundingMode.DOWN` to the currency's `decimal_places` before sending to mini-core (mini-core returns 422 on excess precision):
+Every currency carries its own `decimal_places` from the DB — no hardcoded fiat=2 / crypto=6 assumptions. All amounts are truncated with `RoundingMode.DOWN` at every layer:
+
+**Frontend:** `sanitizeAmount(val, decimalsFor(currency, wallets))` is called on every keystroke. `decimalsFor` looks up `decimalPlaces` from the in-memory wallet cache. Inputs use `type="text" inputMode="decimal"` to give numeric keyboard on mobile without browser spinner arrows.
+
+**API:** `ConversionService` and `WalletService.p2pTransfer` query `decimal_places` from the DB and call `BigDecimal.setScale(decimalPlaces, RoundingMode.DOWN)` before passing to mini-core. Amounts are always `BigDecimal` (never `double`) — `double` causes floating-point serialization artifacts (e.g. `5253.83924303` instead of `5253.83`) that mini-core rejects with 422.
 
 | Currency | Decimal places |
 |---|---|

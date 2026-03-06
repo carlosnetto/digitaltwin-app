@@ -39,13 +39,26 @@ export default {
     // Serve static assets with stripped prefix
     const assetUrl = new URL(request.url);
     assetUrl.pathname = pathname;
-    const assetRequest = new Request(assetUrl.toString(), request);
-    const assetResponse = await env.ASSETS.fetch(assetRequest);
+    const assetResponse = await env.ASSETS.fetch(new Request(assetUrl.toString(), request));
 
-    // SPA fallback: any 404 serves index.html for client-side routing
+    // Cloudflare ASSETS emits root-relative 301/307 redirects for:
+    //   - directory paths without trailing slash  (/erd     → /erd/)
+    //   - .html files with pretty-URL stripping   (/f.html  → /f)
+    // Re-issue those redirects with the base path prefix so the browser
+    // stays under /digitaltwin-app/ instead of jumping to the domain root.
+    if (assetResponse.status === 301 || assetResponse.status === 307) {
+      const location = assetResponse.headers.get('location') ?? '';
+      if (location.startsWith('/')) {
+        const redirectUrl = new URL(basePath + location, url.origin);
+        return Response.redirect(redirectUrl.toString(), assetResponse.status);
+      }
+    }
+
+    // SPA fallback: serve the React root for any 404 (client-side routing).
+    // Use '/' not '/index.html' — ASSETS would redirect /index.html → / anyway.
     if (assetResponse.status === 404) {
       const fallbackUrl = new URL(request.url);
-      fallbackUrl.pathname = '/index.html';
+      fallbackUrl.pathname = '/';
       return env.ASSETS.fetch(new Request(fallbackUrl.toString(), request));
     }
 
