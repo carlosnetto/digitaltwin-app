@@ -9,7 +9,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -81,10 +80,12 @@ public class WalletService {
 
         List<Map<String, Object>> txs = miniCoreClient.getTransactions(minicoreAccountId);
 
-        // mini-core returns oldest-first; reverse so most recent is first, then cap at 50
-        List<Map<String, Object>> reversed = new java.util.ArrayList<>(txs);
-        Collections.reverse(reversed);
-        List<Map<String, Object>> capped = reversed.size() > 50 ? reversed.subList(0, 50) : reversed;
+        // Sort by transaction_id descending (most recent first), then cap at 50
+        List<Map<String, Object>> sorted = txs.stream()
+                .sorted(java.util.Comparator.comparingLong(
+                        tx -> -((Number) tx.get("transaction_id")).longValue()))
+                .toList();
+        List<Map<String, Object>> capped = sorted.size() > 50 ? sorted.subList(0, 50) : sorted;
 
         // Format description: "DIRECT DEPOSIT - PAYROLL" → "Direct deposit - payroll"
         return capped.stream().map(tx -> {
