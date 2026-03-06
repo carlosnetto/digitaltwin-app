@@ -16,5 +16,6 @@
     <include file="db/changelog/009-seed-liquidity-buffer.xml"/>
     <include file="db/changelog/010-create-exchange-rates.xml"/>
     <include file="db/changelog/011-create-conversions.xml"/>
+    <include file="db/changelog/012-create-p2p-transactions.xml"/>
 
 </databaseChangeLog>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="012-create-p2p-transactions" author="digitaltwinapp-api">
+        <sql splitStatements="true">
+            CREATE SEQUENCE digitaltwinapp.p2p_transactions_id_seq START 1;
+
+            CREATE TABLE digitaltwinapp.p2p_transactions (
+                id                  BIGINT              NOT NULL DEFAULT nextval('digitaltwinapp.p2p_transactions_id_seq'),
+                created_at          TIMESTAMPTZ         NOT NULL DEFAULT now(),
+                sender_user_id      BIGINT              NOT NULL REFERENCES digitaltwinapp.users(user_id),
+                recipient_user_id   BIGINT              NOT NULL REFERENCES digitaltwinapp.users(user_id),
+                currency_id         INTEGER             NOT NULL REFERENCES digitaltwinapp.currencies(id),
+                amount              NUMERIC(20,8)       NOT NULL,
+                debit_tx_id         BIGINT              NOT NULL,
+                credit_tx_id        BIGINT              NOT NULL,
+                CONSTRAINT p2p_transactions_pkey        PRIMARY KEY (id),
+                CONSTRAINT p2p_transactions_no_self     CHECK (sender_user_id != recipient_user_id)
+            );
+        </sql>
+        <rollback>
+            DROP TABLE    IF EXISTS digitaltwinapp.p2p_transactions;
+            DROP SEQUENCE IF EXISTS digitaltwinapp.p2p_transactions_id_seq;
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
