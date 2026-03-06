@@ -27,4 +27,4 @@ ingress:
 YAML
 
 echo "Starting digitaltwinapp-api tunnel → localhost:8081 ..."
-cloudflared tunnel run --config "$TMPCONFIG" --token "$TOKEN"
+cloudflared tunnel --config "$TMPCONFIG" run --token "$TOKEN"
