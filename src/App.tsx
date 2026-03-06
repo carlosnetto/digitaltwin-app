@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import { StoreProvider, useStore, clearWalletCache } from './store';
 import { Wallet as WalletType } from './types';
-import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode, RefreshCw } from 'lucide-react';
+import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode, RefreshCw, LogOut } from 'lucide-react';
 import QRCode from 'react-qr-code';
 
 // Simple Toast component
@@ -66,7 +66,7 @@ interface MiniCoreTx {
   created_at: string;
 }
 
-function Dashboard() {
+function Dashboard({ user, onLogout }: { user: { name: string; picture: string }, onLogout: () => void }) {
   const { wallets, refreshWallets } = useStore();
   const [selectedWallet, setSelectedWallet] = useState<WalletType | null>(null);
   const [actionType, setActionType] = useState<'send' | 'receive' | 'buy' | 'sell' | 'convert' | null>(null);
@@ -74,6 +74,7 @@ function Dashboard() {
   const [txs, setTxs] = useState<MiniCoreTx[]>([]);
   const [txsCapped, setTxsCapped] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const getExplorerUrl = (network: string, txHash: string) => {
@@ -156,8 +157,24 @@ function Dashboard() {
             className="h-4 object-contain"
           />
         </div>
-        <div className="w-10 h-10 rounded-full bg-matera-blue flex items-center justify-center border border-matera-green/30">
-          <span className="font-bold text-matera-green">CN</span>
+        <div className="relative">
+          <button onClick={() => setShowProfile(p => !p)} className="w-10 h-10 rounded-full overflow-hidden border-2 border-matera-green/40 hover:border-matera-green transition-colors focus:outline-none">
+            <img src={user.picture} alt={user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+          </button>
+          {showProfile && (
+            <div className="absolute right-0 top-12 w-56 bg-matera-card border border-white/10 rounded-2xl shadow-xl z-50 overflow-hidden">
+              <div className="flex items-center gap-3 p-4 border-b border-white/10">
+                <img src={user.picture} alt={user.name} className="w-10 h-10 rounded-full object-cover shrink-0" referrerPolicy="no-referrer" />
+                <p className="text-white text-sm font-medium leading-tight">{user.name}</p>
+              </div>
+              <button
+                onClick={() => { setShowProfile(false); onLogout(); }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-matera-muted hover:text-white hover:bg-white/5 transition-colors"
+              >
+                <LogOut size={16} /> Sign out
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -1319,7 +1336,7 @@ export default function App() {
     <StoreProvider>
       <div className="min-h-screen bg-matera-bg pb-20 md:pb-0 md:pl-64 animate-in fade-in duration-500">
         <Sidebar user={user} onLogout={handleLogout} />
-        <Dashboard />
+        <Dashboard user={user} onLogout={handleLogout} />
         <BottomNav onScanPress={() => setShowScanner(true)} />
         {showScanner && <QRScannerModal onClose={() => setShowScanner(false)} />}
       </div>
