@@ -686,7 +686,7 @@ function ReceiveModal({ walletId, onClose }: { walletId: string, onClose: () => 
 }
 
 function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void }) {
-  const { refreshWallets } = useStore();
+  const { refreshWallets, wallets } = useStore();
   const [cryptoAmount, setCryptoAmount] = useState('');
   const [fiatAmount, setFiatAmount] = useState('');
   const [fiatCurrency, setFiatCurrency] = useState<'USD' | 'BRL'>('USD');
@@ -694,6 +694,8 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const fiatDecimalPlaces = wallets.find(w => w.currency === fiatCurrency)?.decimalPlaces ?? 2;
 
   // Fetch live rate: 1 crypto = X fiat
   useEffect(() => {
@@ -708,12 +710,12 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
     const s = sanitizeAmount(val, wallet.decimalPlaces);
     setCryptoAmount(s);
     const num = parseFloat(s);
-    if (!isNaN(num) && rate !== null) setFiatAmount((num * rate).toFixed(2));
+    if (!isNaN(num) && rate !== null) setFiatAmount((num * rate).toFixed(fiatDecimalPlaces));
     else setFiatAmount('');
   };
 
   const handleFiatChange = (val: string) => {
-    const s = sanitizeAmount(val, 2);
+    const s = sanitizeAmount(val, fiatDecimalPlaces);
     setFiatAmount(s);
     const num = parseFloat(s);
     if (!isNaN(num) && rate !== null) setCryptoAmount((num / rate).toFixed(wallet.decimalPlaces));
@@ -842,7 +844,7 @@ function BuyModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void
 }
 
 function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => void }) {
-  const { refreshWallets } = useStore();
+  const { refreshWallets, wallets } = useStore();
   const [cryptoAmount, setCryptoAmount] = useState('');
   const [fiatAmount, setFiatAmount] = useState('');
   const [fiatCurrency, setFiatCurrency] = useState<'USD' | 'BRL'>('USD');
@@ -850,6 +852,8 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const fiatDecimalPlaces = wallets.find(w => w.currency === fiatCurrency)?.decimalPlaces ?? 2;
 
   // Fetch live rate: 1 crypto = X fiat
   useEffect(() => {
@@ -864,12 +868,12 @@ function SellModal({ wallet, onClose }: { wallet: WalletType, onClose: () => voi
     const s = sanitizeAmount(val, wallet.decimalPlaces);
     setCryptoAmount(s);
     const num = parseFloat(s);
-    if (!isNaN(num) && rate !== null) setFiatAmount((num * rate).toFixed(2));
+    if (!isNaN(num) && rate !== null) setFiatAmount((num * rate).toFixed(fiatDecimalPlaces));
     else setFiatAmount('');
   };
 
   const handleFiatChange = (val: string) => {
-    const s = sanitizeAmount(val, 2);
+    const s = sanitizeAmount(val, fiatDecimalPlaces);
     setFiatAmount(s);
     const num = parseFloat(s);
     if (!isNaN(num) && rate !== null) setCryptoAmount((num / rate).toFixed(wallet.decimalPlaces));
