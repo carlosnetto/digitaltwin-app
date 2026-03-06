@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import { StoreProvider, useStore, clearWalletCache } from './store';
 import { Wallet as WalletType } from './types';
-import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode, RefreshCw, LogOut, Sun, Moon } from 'lucide-react';
+import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode, RefreshCw, LogOut, Globe, Clock } from 'lucide-react';
 import QRCode from 'react-qr-code';
 
 // Simple Toast component
@@ -66,7 +66,7 @@ interface MiniCoreTx {
   created_at: string;
 }
 
-function Dashboard({ user, onLogout }: { user: { name: string; picture: string }, onLogout: () => void }) {
+function Dashboard({ user, onLogout, timezone }: { user: { name: string; picture: string }, onLogout: () => void, timezone: string }) {
   const { wallets, refreshWallets } = useStore();
   const [selectedWallet, setSelectedWallet] = useState<WalletType | null>(null);
   const [actionType, setActionType] = useState<'send' | 'receive' | 'buy' | 'sell' | 'convert' | null>(null);
@@ -304,7 +304,7 @@ function Dashboard({ user, onLogout }: { user: { name: string; picture: string }
                     </div>
                     <div>
                       <p className="text-white font-medium">{tx.transaction_description}</p>
-                      <p className="text-xs text-matera-muted">{new Date(tx.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+                      <p className="text-xs text-matera-muted">{new Date(tx.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: timezone })}</p>
                     </div>
                   </div>
                   <div className="text-right">
@@ -1141,7 +1141,7 @@ function QRScannerModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function BottomNav({ onScanPress, theme, onThemeToggle }: { onScanPress: () => void; theme: string; onThemeToggle: () => void }) {
+function BottomNav({ onScanPress, onSettingsPress }: { onScanPress: () => void; onSettingsPress: () => void }) {
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-matera-card border-t border-white/5 md:hidden">
       <div className="flex justify-around items-end px-4 pt-2 pb-4">
@@ -1161,8 +1161,8 @@ function BottomNav({ onScanPress, theme, onThemeToggle }: { onScanPress: () => v
           <span className="text-[10px] font-medium text-matera-muted mt-0.5">Scan</span>
         </button>
 
-        <button onClick={onThemeToggle} className="flex flex-col items-center gap-1 text-matera-muted hover:text-white transition-colors pb-1">
-          {theme === 'dark' ? <Sun size={24} /> : <Moon size={24} />}
+        <button onClick={onSettingsPress} className="flex flex-col items-center gap-1 text-matera-muted hover:text-white transition-colors pb-1">
+          <Settings size={24} />
           <span className="text-[10px] font-medium">Settings</span>
         </button>
       </div>
@@ -1170,7 +1170,7 @@ function BottomNav({ onScanPress, theme, onThemeToggle }: { onScanPress: () => v
   );
 }
 
-function Sidebar({ user, onLogout, theme, onThemeToggle }: { user: User; onLogout: () => void; theme: string; onThemeToggle: () => void }) {
+function Sidebar({ user, onLogout, onSettingsPress }: { user: User; onLogout: () => void; onSettingsPress: () => void }) {
   return (
     <div className="hidden md:flex flex-col w-64 bg-matera-card border-r border-white/5 h-screen fixed left-0 top-0 p-6">
       <div className="mb-10">
@@ -1188,9 +1188,8 @@ function Sidebar({ user, onLogout, theme, onThemeToggle }: { user: User; onLogou
         <button className="w-full flex items-center gap-3 text-matera-muted hover:text-white hover:bg-white/5 px-4 py-3 rounded-xl font-medium transition-colors">
           <Activity size={20} /> Activity
         </button>
-        <button onClick={onThemeToggle} className="w-full flex items-center gap-3 text-matera-muted hover:text-white hover:bg-white/5 px-4 py-3 rounded-xl font-medium transition-colors">
-          {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-          {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+        <button onClick={onSettingsPress} className="w-full flex items-center gap-3 text-matera-muted hover:text-white hover:bg-white/5 px-4 py-3 rounded-xl font-medium transition-colors">
+          <Settings size={20} /> Settings
         </button>
       </nav>
       <div className="border-t border-white/5 pt-4">
@@ -1209,6 +1208,69 @@ function Sidebar({ user, onLogout, theme, onThemeToggle }: { user: User; onLogou
         >
           Sign out
         </button>
+      </div>
+    </div>
+  );
+}
+
+const TIMEZONES = [
+  { group: 'Brazil', options: [
+    { label: 'Brasília Time — BRT (UTC−3)', value: 'America/Sao_Paulo' },
+    { label: 'Amazon Time — AMT (UTC−4)', value: 'America/Manaus' },
+    { label: 'Acre Time — ACT (UTC−5)', value: 'America/Rio_Branco' },
+    { label: 'Fernando de Noronha — FNT (UTC−2)', value: 'America/Noronha' },
+  ]},
+  { group: 'United States', options: [
+    { label: 'Eastern Time — ET (UTC−5/−4)', value: 'America/New_York' },
+    { label: 'Central Time — CT (UTC−6/−5)', value: 'America/Chicago' },
+    { label: 'Mountain Time — MT (UTC−7/−6)', value: 'America/Denver' },
+    { label: 'Pacific Time — PT (UTC−8/−7)', value: 'America/Los_Angeles' },
+    { label: 'Alaska Time — AKT (UTC−9/−8)', value: 'America/Anchorage' },
+    { label: 'Hawaii Time — HST (UTC−10)', value: 'Pacific/Honolulu' },
+  ]},
+];
+
+function SettingsModal({ timezone, onTimezoneChange, onClose }: { timezone: string; onTimezoneChange: (tz: string) => void; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-matera-card rounded-3xl p-6 w-full max-w-sm border border-white/10 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xl font-bold text-white">Settings</h3>
+          <button onClick={onClose} className="text-matera-muted hover:text-white transition-colors"><X size={20} /></button>
+        </div>
+
+        {/* Language */}
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <Globe size={16} className="text-matera-green" />
+            <p className="text-sm font-semibold text-matera-text">Language</p>
+          </div>
+          <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 border border-white/10">
+            <span className="text-white text-sm">English</span>
+            <span className="text-xs text-matera-muted">Only option</span>
+          </div>
+        </div>
+
+        {/* Timezone */}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Clock size={16} className="text-matera-green" />
+            <p className="text-sm font-semibold text-matera-text">Timezone</p>
+          </div>
+          <select
+            value={timezone}
+            onChange={e => onTimezoneChange(e.target.value)}
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-matera-green/50 appearance-none cursor-pointer"
+          >
+            {TIMEZONES.map(group => (
+              <optgroup key={group.group} label={group.group} className="bg-matera-card">
+                {group.options.map(opt => (
+                  <option key={opt.value} value={opt.value} className="bg-matera-card">{opt.label}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );
@@ -1311,14 +1373,13 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
-  const [theme, setTheme] = useState<string>(() => localStorage.getItem('dt_theme') ?? 'dark');
+  const [showSettings, setShowSettings] = useState(false);
+  const [timezone, setTimezone] = useState<string>(() => localStorage.getItem('dt_timezone') ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('light', theme === 'light');
-    localStorage.setItem('dt_theme', theme);
-  }, [theme]);
-
-  const handleThemeToggle = useCallback(() => setTheme(t => t === 'dark' ? 'light' : 'dark'), []);
+  const handleTimezoneChange = useCallback((tz: string) => {
+    setTimezone(tz);
+    localStorage.setItem('dt_timezone', tz);
+  }, []);
 
   useEffect(() => {
     fetch(`${import.meta.env.BASE_URL}api/auth/me`, { credentials: 'include' })
@@ -1344,10 +1405,11 @@ export default function App() {
   return (
     <StoreProvider>
       <div className="min-h-screen bg-matera-bg pb-20 md:pb-0 md:pl-64 animate-in fade-in duration-500">
-        <Sidebar user={user} onLogout={handleLogout} theme={theme} onThemeToggle={handleThemeToggle} />
-        <Dashboard user={user} onLogout={handleLogout} />
-        <BottomNav onScanPress={() => setShowScanner(true)} theme={theme} onThemeToggle={handleThemeToggle} />
+        <Sidebar user={user} onLogout={handleLogout} onSettingsPress={() => setShowSettings(true)} />
+        <Dashboard user={user} onLogout={handleLogout} timezone={timezone} />
+        <BottomNav onScanPress={() => setShowScanner(true)} onSettingsPress={() => setShowSettings(true)} />
         {showScanner && <QRScannerModal onClose={() => setShowScanner(false)} />}
+        {showSettings && <SettingsModal timezone={timezone} onTimezoneChange={handleTimezoneChange} onClose={() => setShowSettings(false)} />}
       </div>
     </StoreProvider>
   );
