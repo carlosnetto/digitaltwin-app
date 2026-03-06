@@ -272,7 +272,7 @@ function Dashboard() {
                   </div>
                   <div className="text-right">
                     <p className={`font-semibold ${isCredit ? 'text-matera-green' : 'text-red-400'}`}>
-                      {isCredit ? '+' : '-'}{tx.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+                      {isCredit ? '+' : '-'}{tx.amount.toLocaleString('en-US', { minimumFractionDigits: activeWallet.decimalPlaces, maximumFractionDigits: activeWallet.decimalPlaces })}
                     </p>
                     <p className="text-xs text-matera-muted capitalize">{tx.status.toLowerCase()}</p>
                   </div>
