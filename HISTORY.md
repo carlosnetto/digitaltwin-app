@@ -377,3 +377,32 @@ Computed (mirror) fields — the amount automatically calculated on the other si
 Mini-core enforces its own decimal limit and returns 422 on violation — the API-side truncation ensures we never reach that error in normal operation.
 
 **Rule:** decimal places are always read from `digitaltwinapp.currencies.decimal_places` (DB) or the frontend wallet cache — never hardcoded by asset class. Both layers (frontend input and API) enforce the limit independently.
+
+---
+
+## Mar 2026 — Rate Fetch Failures & ConvertModal Race Condition
+
+### Bug: "Loading rate…" forever with empty currency dropdown (reported by Dailson)
+A user reported the conversion rate staying on "Loading rate…" indefinitely, with the currency dropdown empty. The tunnel logs showed a ~3.5 minute QUIC outage (`10:00–10:04 UTC`). The second attempt worked.
+
+**Two root causes, compounding each other:**
+
+**1. ConvertModal `targetWalletId` race condition.**
+`targetWalletId` is a `useState` initialized from `targetOptions[0]?.id || ''`. React's `useState` only evaluates its initial value once at mount. If `wallets` was empty at mount time (no localStorage cache + tunnel was down when the page loaded, so `refreshWallets()` failed), `targetWalletId` was set to `''` and never updated — even after wallets eventually loaded. With `targetWalletId = ''`, `targetWallet` is always `undefined`. The `useEffect` that fetches the rate begins with `if (!targetWallet) return`, so it exits immediately and rate stays `null` forever.
+
+**Fix:** added a `useEffect` that watches `targetOptions.length` and fills in `targetWalletId` whenever it transitions from empty to populated:
+```typescript
+useEffect(() => {
+  if (!targetWalletId && targetOptions.length > 0) setTargetWalletId(targetOptions[0].id);
+}, [targetOptions.length, targetWalletId]);
+```
+
+**2. Silent `.catch(() => {})` on all three rate fetch useEffects.**
+Any network error or non-ok HTTP response was swallowed silently. Rate stayed `null` and "Loading rate…" displayed forever with no user feedback and no way to retry short of closing and reopening the modal. SellModal additionally had no `r.ok` check and no NaN guard — it could silently set rate to `NaN`.
+
+**Fix:** added `rateError` state (set in `.catch`) and a `rateKey` counter. When `rateError` is true, the rate line renders a red **"Could not load rate — tap to retry"** button instead of the infinite spinner. Tapping increments `rateKey`, which is included in the `useEffect` dependency array, re-triggering the fetch without closing the modal. Applied to ConvertModal, BuyModal, and SellModal. SellModal also received the missing `r.ok` check and NaN guard.
+
+**Lesson:** never use `.catch(() => {})` on a fetch that drives UI state. Silent failures leave the user with no indication of what went wrong and no path to recovery. Always set an error state and offer a retry.
+
+### PROTOTYPE watermark on ReceiveModal
+The Receive flow generates QR codes and account details that are simulated (not real banking infrastructure). A diagonal red semi-transparent "PROTOTYPE" watermark was added over the modal to make this clear to anyone who sees it. Implemented as an absolutely-positioned `pointer-events-none` overlay so it doesn't block any interactions.
