@@ -318,3 +318,28 @@ Previously crypto wallets also showed a Convert (crypto↔crypto) button. Remove
 Migration 013 dropped `sender_user_id`, `recipient_user_id`, and `currency_id` — all redundant because each mini-core `transaction_id` already links to `account_id` → `user_accounts` → user and currency.
 
 **Lesson:** Don't denormalize when a FK chain already covers the relationship. The `debit_tx_id` → mini-core transaction → account → `user_accounts` → user is a complete, joinable path. Storing user IDs again just creates sync risk.
+
+---
+
+## Mar 2026 — Financial Invariants: Balance Checks & BigDecimal Precision
+
+### Negative balance bug (Sarah's -$98.10)
+A user bought $100 of USDC while her USD account held only $1.90, resulting in a -$98.10 balance. Root cause: `ConversionService.convert()` executed all 4 mini-core transactions without first checking whether the sender had sufficient funds. Mini-core has no negative-balance guard at the DB level — it applies debits unconditionally.
+
+**Fix:** `ConversionService` now calls `MiniCoreClient.getAccount(userFromAccount)` after resolving accounts and before posting any transaction. If `available_balance < fromAmountBD`, it throws `IllegalArgumentException("Insufficient <currency> balance: available X, requested Y")` → 400 to the frontend. This mirrors the pattern already in `WalletService.p2pTransfer()`.
+
+**Lesson:** Never assume the downstream system enforces balance rules. Mini-core is a demo ledger — it will happily overdraft. The API layer must validate before mutating.
+
+### Never use `float` or `double` for monetary amounts
+`MiniCoreClient.createTransaction()` originally accepted `double amount`. This caused two categories of bugs:
+
+1. **Wrong variable passed** — `ConversionService` was passing the raw `double fromAmount` input parameter to all 4 transactions instead of the truncated `BigDecimal`. The `fromAmountBD` / `toAmountBD` locals existed but weren't always used.
+
+2. **Floating-point serialization** — Even when a truncated `BigDecimal` like `5253.83` was correctly computed, converting it to `double` via `.doubleValue()` and placing it in a `HashMap<String, Object>` caused Jackson to serialize the binary float representation rather than the decimal value. This produced amounts like `5253.83924303` on the wire — 8 decimal places sent to a 2dp BRL account — triggering mini-core 422 errors.
+
+**Fix:** `MiniCoreClient.createTransaction()` signature changed from `double` to `BigDecimal`. All call sites updated to pass truncated `BigDecimal` values directly. Jackson serializes `BigDecimal` at its declared scale, so `5253.83` (scale 2) serializes as `5253.83` exactly.
+
+**Rule:** `double` / `float` must never appear anywhere in a monetary computation or data path. Use `BigDecimal` from input to wire. Truncate with `RoundingMode.DOWN` to the currency's `decimal_places`. The same rule applies to the welcome credit (`new BigDecimal("10000.00")`, not `10_000.0`) and P2P amounts.
+
+### Desktop sidebar Activity button removed
+The "Activity" button in the desktop sidebar nav had no `onClick` handler — it was a visual placeholder that did nothing. Removed to avoid confusing users.
