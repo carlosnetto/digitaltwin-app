@@ -134,7 +134,6 @@ public class ConversionService {
         // Truncate to each currency's declared decimal precision (DOWN = truncate, never round up)
         BigDecimal fromAmountBD = BigDecimal.valueOf(fromAmount).setScale(fromDecimalPlaces, RoundingMode.DOWN);
         BigDecimal toAmountBD   = fromAmountBD.multiply(rate).setScale(toDecimalPlaces, RoundingMode.DOWN);
-        double toAmount = toAmountBD.doubleValue();
 
         // ── 4. Resolve mini-core account IDs ──────────────────────────────
         long userFromAccount = getMiniCoreAccountId(userId, fromCurrencyId);
@@ -142,13 +141,25 @@ public class ConversionService {
         long poolFromAccount = getMiniCoreAccountId(POOL_USER_ID, fromCurrencyId);
         long poolToAccount   = getMiniCoreAccountId(POOL_USER_ID, toCurrencyId);
 
+        // ── 4.5. Verify sufficient balance ────────────────────────────────
+        Map<String, Object> userFromAccountData = miniCoreClient.getAccount(userFromAccount);
+        if (userFromAccountData == null) {
+            throw new IllegalStateException("Could not fetch balance for " + fromCurrencyCode + " account");
+        }
+        BigDecimal availableBalance = new BigDecimal(userFromAccountData.get("available_balance").toString());
+        if (availableBalance.compareTo(fromAmountBD) < 0) {
+            throw new IllegalArgumentException(
+                    "Insufficient " + fromCurrencyCode + " balance: available " + availableBalance.toPlainString()
+                    + ", requested " + fromAmountBD.toPlainString());
+        }
+
         String desc = "Currency conversion " + fromCurrencyCode + " → " + toCurrencyCode;
 
         // ── 5. Execute the 4 mini-core transactions ────────────────────────
-        long userDebitTxId  = miniCoreClient.createTransaction(userFromAccount, userDebitCode,        fromAmount, "DEBIT",  desc);
-        long userCreditTxId = miniCoreClient.createTransaction(userToAccount,   userCreditCode,       toAmount,   "CREDIT", desc);
-        long poolCreditTxId = miniCoreClient.createTransaction(poolFromAccount, TX_CODE_POOL_CREDIT,  fromAmount, "CREDIT", desc);
-        long poolDebitTxId  = miniCoreClient.createTransaction(poolToAccount,   TX_CODE_POOL_DEBIT,   toAmount,   "DEBIT",  desc);
+        long userDebitTxId  = miniCoreClient.createTransaction(userFromAccount, userDebitCode,        fromAmountBD, "DEBIT",  desc);
+        long userCreditTxId = miniCoreClient.createTransaction(userToAccount,   userCreditCode,       toAmountBD,   "CREDIT", desc);
+        long poolCreditTxId = miniCoreClient.createTransaction(poolFromAccount, TX_CODE_POOL_CREDIT,  fromAmountBD, "CREDIT", desc);
+        long poolDebitTxId  = miniCoreClient.createTransaction(poolToAccount,   TX_CODE_POOL_DEBIT,   toAmountBD,   "DEBIT",  desc);
 
         if (userDebitTxId < 0 || userCreditTxId < 0) {
             log.error("Conversion failed: user transactions returned error (debit={}, credit={})",
@@ -178,12 +189,12 @@ public class ConversionService {
                 poolDebitTxId > 0 ? poolDebitTxId : null);
 
         log.info("Conversion #{} complete: {} {} → {} {} (rate={}) user={}",
-                conversionId, fromAmount, fromCurrencyCode, toAmount, toCurrencyCode, rate, email);
+                conversionId, fromAmountBD, fromCurrencyCode, toAmountBD, toCurrencyCode, rate, email);
 
         return new ConversionResultDto(
                 conversionId == null ? -1 : conversionId,
                 fromCurrencyCode, toCurrencyCode,
-                fromAmount, toAmount, rate.doubleValue());
+                fromAmountBD.doubleValue(), toAmountBD.doubleValue(), rate.doubleValue());
     }
 
     private long getMiniCoreAccountId(long userId, int currencyId) {

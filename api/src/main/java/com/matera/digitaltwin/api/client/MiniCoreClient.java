@@ -7,6 +7,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -99,7 +100,7 @@ public class MiniCoreClient {
      * @param description optional; stored in json_payload
      * @return the transaction id, or -1 if the call failed
      */
-    public long createTransaction(long accountId, int transactionCode, double amount,
+    public long createTransaction(long accountId, int transactionCode, BigDecimal amount,
                                   String direction, String description) {
         var body = new HashMap<String, Object>();
         body.put("account_id",        accountId);

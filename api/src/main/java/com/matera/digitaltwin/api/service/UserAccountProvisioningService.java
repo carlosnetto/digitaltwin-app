@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -67,7 +68,7 @@ public class UserAccountProvisioningService {
     }
 
     private static final int TX_CASH_DEPOSIT = 10001;
-    private static final double WELCOME_BRL_AMOUNT = 10_000.0;
+    private static final BigDecimal WELCOME_BRL_AMOUNT = new BigDecimal("10000.00");
 
     private void provision(long userId, Map<String, Object> currencyRow) {
         int currencyId   = ((Number) currencyRow.get("id")).intValue();

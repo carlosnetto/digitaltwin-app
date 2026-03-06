@@ -1223,10 +1223,7 @@ function Sidebar({ user, onLogout, onSettingsPress }: { user: User; onLogout: ()
         <button className="w-full flex items-center gap-3 bg-matera-blue/20 text-matera-green px-4 py-3 rounded-xl font-medium">
           <Wallet size={20} /> Accounts
         </button>
-        <button className="w-full flex items-center gap-3 text-matera-muted hover:text-white hover:bg-white/5 px-4 py-3 rounded-xl font-medium transition-colors">
-          <Activity size={20} /> Activity
-        </button>
-        <button onClick={onSettingsPress} className="w-full flex items-center gap-3 text-matera-muted hover:text-white hover:bg-white/5 px-4 py-3 rounded-xl font-medium transition-colors">
+<button onClick={onSettingsPress} className="w-full flex items-center gap-3 text-matera-muted hover:text-white hover:bg-white/5 px-4 py-3 rounded-xl font-medium transition-colors">
           <Settings size={20} /> Settings
         </button>
       </nav>

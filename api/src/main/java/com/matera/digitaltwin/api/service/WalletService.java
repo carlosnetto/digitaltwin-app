@@ -115,6 +115,11 @@ public class WalletService {
             throw new IllegalArgumentException("Cannot send to yourself");
         }
 
+        int decimalPlaces = jdbc.queryForObject(
+                "SELECT decimal_places FROM digitaltwinapp.currencies WHERE code = ?",
+                Integer.class, currencyCode);
+        BigDecimal amountBD = BigDecimal.valueOf(amount).setScale(decimalPlaces, java.math.RoundingMode.DOWN);
+
         Long senderUserId = jdbc.queryForObject(
                 "SELECT user_id FROM digitaltwinapp.users WHERE email = ?", Long.class, senderEmail);
 
@@ -149,10 +154,10 @@ public class WalletService {
         Map<String, Object> senderAccount = miniCoreClient.getAccount(senderAccountId);
         if (senderAccount == null) throw new IllegalStateException("Could not fetch sender balance");
         double balance = ((Number) senderAccount.get("available_balance")).doubleValue();
-        if (balance < amount) throw new IllegalArgumentException("Insufficient balance");
+        if (balance < amountBD.doubleValue()) throw new IllegalArgumentException("Insufficient balance");
 
-        long debitTxId  = miniCoreClient.createTransaction(senderAccountId,    20026, amount, "DEBIT",  recipientEmail);
-        long creditTxId = miniCoreClient.createTransaction(recipientAccountId, 10027, amount, "CREDIT", senderEmail);
+        long debitTxId  = miniCoreClient.createTransaction(senderAccountId,    20026, amountBD, "DEBIT",  recipientEmail);
+        long creditTxId = miniCoreClient.createTransaction(recipientAccountId, 10027, amountBD, "CREDIT", senderEmail);
 
         if (debitTxId < 0 || creditTxId < 0) {
             throw new IllegalStateException("Transfer failed — mini-core error");
@@ -162,10 +167,10 @@ public class WalletService {
                 INSERT INTO digitaltwinapp.p2p_transactions (amount, debit_tx_id, credit_tx_id)
                 VALUES (?, ?, ?)
                 RETURNING id
-                """, Long.class, amount, debitTxId, creditTxId);
+                """, Long.class, amountBD, debitTxId, creditTxId);
 
         log.info("P2P transfer #{}: {} {} debit_tx={} credit_tx={}",
-                p2pId, amount, currencyCode, debitTxId, creditTxId);
+                p2pId, amountBD, currencyCode, debitTxId, creditTxId);
 
         return Map.of("p2pId", p2pId, "debitTxId", debitTxId, "creditTxId", creditTxId);
     }
