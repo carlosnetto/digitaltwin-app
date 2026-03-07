@@ -1,6 +1,5 @@
 package com.matera.digitaltwin.api.service;
 
-import com.lowagie.text.BaseColor;
 import com.lowagie.text.Document;
 import com.lowagie.text.Element;
 import com.lowagie.text.Font;
@@ -19,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.awt.Color;
 import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -44,14 +44,15 @@ public class StatementService {
     private static final Logger log = LoggerFactory.getLogger(StatementService.class);
 
     // ── Colours (Matera brand) ─────────────────────────────────────────────
-    private static final BaseColor NAVY       = new BaseColor(0,   30,  96);   // #001E60
-    private static final BaseColor ROW_ALT    = new BaseColor(245, 247, 250);
-    private static final BaseColor DEBIT_RED  = new BaseColor(200,  40,  40);
-    private static final BaseColor CREDIT_GRN = new BaseColor(0,  130,  80);
-    private static final BaseColor BORDER     = new BaseColor(220, 225, 235);
+    private static final Color NAVY       = new Color(0,   30,  96);   // #001E60
+    private static final Color DARK_GRAY  = new Color(64,  64,  64);
+    private static final Color ROW_ALT    = new Color(245, 247, 250);
+    private static final Color DEBIT_RED  = new Color(200,  40,  40);
+    private static final Color CREDIT_GRN = new Color(0,  130,  80);
+    private static final Color BORDER     = new Color(220, 225, 235);
 
-    private static final DateTimeFormatter DATE_FMT  = DateTimeFormatter.ofPattern("MMM dd, yyyy");
-    private static final DateTimeFormatter TS_FMT    = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm z");
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("MMM dd, yyyy");
+    private static final DateTimeFormatter TS_FMT   = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm z");
 
     private final JdbcTemplate              jdbc;
     private final MiniCoreClient            miniCoreClient;
@@ -90,10 +91,10 @@ public class StatementService {
                     "No account found for email=" + email + ", currency=" + currencyCode);
         }
 
-        String userName       = (String) accountInfo.get("user_name");
-        long   minicoreAccId  = ((Number) accountInfo.get("minicore_account_id")).longValue();
-        String currencyName   = (String) accountInfo.get("currency_name");
-        int    decimalPlaces  = ((Number) accountInfo.get("decimal_places")).intValue();
+        String userName      = (String) accountInfo.get("user_name");
+        long   minicoreAccId = ((Number) accountInfo.get("minicore_account_id")).longValue();
+        String currencyName  = (String) accountInfo.get("currency_name");
+        int    decimalPlaces = ((Number) accountInfo.get("decimal_places")).intValue();
 
         // ── 2. Fetch + filter transactions ────────────────────────────────
         List<Map<String, Object>> all = miniCoreClient.getTransactions(minicoreAccId);
@@ -134,16 +135,16 @@ public class StatementService {
         writer.setPageEvent(new PageNumbers());
         doc.open();
 
-        // ── Header ────────────────────────────────────────────────────────
-        Font appFont  = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, NAVY);
+        // ── Fonts ─────────────────────────────────────────────────────────
+        Font appFont  = FontFactory.getFont(FontFactory.HELVETICA_BOLD,  9, NAVY);
         Font titleFnt = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, NAVY);
-        Font labelFnt = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, new BaseColor(64, 64, 64));
-        Font valueFnt = FontFactory.getFont(FontFactory.HELVETICA, 9, new BaseColor(64, 64, 64));
-        Font colFnt   = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, BaseColor.WHITE);
-        Font cellFnt  = FontFactory.getFont(FontFactory.HELVETICA, 8, new BaseColor(64, 64, 64));
-        Font amtFnt   = FontFactory.getFont(FontFactory.HELVETICA, 8, new BaseColor(64, 64, 64));
-        Font totalFnt = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, new BaseColor(64, 64, 64));
+        Font labelFnt = FontFactory.getFont(FontFactory.HELVETICA_BOLD,  9, DARK_GRAY);
+        Font valueFnt = FontFactory.getFont(FontFactory.HELVETICA,       9, DARK_GRAY);
+        Font colFnt   = FontFactory.getFont(FontFactory.HELVETICA_BOLD,  8, Color.WHITE);
+        Font cellFnt  = FontFactory.getFont(FontFactory.HELVETICA,       8, DARK_GRAY);
+        Font totalFnt = FontFactory.getFont(FontFactory.HELVETICA_BOLD,  8, DARK_GRAY);
 
+        // ── App name + title ──────────────────────────────────────────────
         Paragraph appName = new Paragraph("Digital Twin — Matera", appFont);
         appName.setAlignment(Element.ALIGN_RIGHT);
         doc.add(appName);
@@ -152,28 +153,21 @@ public class StatementService {
         title.setSpacingBefore(4);
         doc.add(title);
 
-        // Divider
-        doc.add(divider());
-
-        // Info table (2 columns)
+        // ── Info grid ─────────────────────────────────────────────────────
         PdfPTable info = new PdfPTable(2);
         info.setWidthPercentage(100);
-        info.setSpacingBefore(8);
-        info.setSpacingAfter(8);
+        info.setSpacingBefore(10);
+        info.setSpacingAfter(10);
 
-        addInfoRow(info, "Account Holder", userName, labelFnt, valueFnt);
-        addInfoRow(info, "Currency", currencyCode + " — " + currencyName, labelFnt, valueFnt);
-        addInfoRow(info, "Period",
-                from.format(DATE_FMT) + "  →  " + to.format(DATE_FMT), labelFnt, valueFnt);
-        addInfoRow(info, "Generated",
-                ZonedDateTime.now().format(TS_FMT), labelFnt, valueFnt);
-
+        addInfoRow(info, "Account Holder", userName,                           labelFnt, valueFnt);
+        addInfoRow(info, "Currency",       currencyCode + " — " + currencyName, labelFnt, valueFnt);
+        addInfoRow(info, "Period",         from.format(DATE_FMT) + "  →  " + to.format(DATE_FMT), labelFnt, valueFnt);
+        addInfoRow(info, "Generated",      ZonedDateTime.now().format(TS_FMT), labelFnt, valueFnt);
         doc.add(info);
-        doc.add(divider());
 
         // ── Transaction table ──────────────────────────────────────────────
         if (txs.isEmpty()) {
-            Font noTx = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 10, BaseColor.GRAY);
+            Font noTx = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 10, Color.GRAY);
             Paragraph none = new Paragraph("No transactions found for this period.", noTx);
             none.setSpacingBefore(20);
             none.setAlignment(Element.ALIGN_CENTER);
@@ -192,10 +186,9 @@ public class StatementService {
             h.setBackgroundColor(NAVY);
             h.setPadding(5);
             h.setBorder(Rectangle.NO_BORDER);
-            h.setHorizontalAlignment(header.equals("Description") ? Element.ALIGN_LEFT : Element.ALIGN_RIGHT);
-            if (header.equals("Date") || header.equals("Description")) {
-                h.setHorizontalAlignment(Element.ALIGN_LEFT);
-            }
+            h.setHorizontalAlignment(
+                    header.equals("Date") || header.equals("Description")
+                            ? Element.ALIGN_LEFT : Element.ALIGN_RIGHT);
             table.addCell(h);
         }
 
@@ -204,7 +197,7 @@ public class StatementService {
         boolean alt = false;
 
         for (Map<String, Object> tx : txs) {
-            BaseColor bg = alt ? ROW_ALT : BaseColor.WHITE;
+            Color bg = alt ? ROW_ALT : Color.WHITE;
             alt = !alt;
 
             String ledgerId  = String.valueOf(((Number) tx.get("transaction_id")).longValue());
@@ -212,30 +205,32 @@ public class StatementService {
             String desc      = summaries.getOrDefault(ledgerId,
                     capitalize((String) tx.getOrDefault("transaction_description", "")));
             boolean isCredit = "CREDIT".equals(tx.get("direction"));
-            BigDecimal amt   = toBigDecimal(tx.get("amount"), decimalPlaces);
+            BigDecimal amt   = toBigDecimal(tx.get("amount"),                decimalPlaces);
             BigDecimal bal   = toBigDecimal(tx.get("post_available_balance"), decimalPlaces);
 
             if (isCredit) totalCredit = totalCredit.add(amt);
             else          totalDebit  = totalDebit.add(amt);
 
-            table.addCell(cell(date,              bg, cellFnt, Element.ALIGN_LEFT,  false));
-            table.addCell(cell(desc,              bg, cellFnt, Element.ALIGN_LEFT,  false));
-            table.addCell(cell(isCredit ? "" : fmt(amt, decimalPlaces), bg,
-                    amountFont(false, false, amtFnt), Element.ALIGN_RIGHT, false));
-            table.addCell(cell(isCredit ? fmt(amt, decimalPlaces) : "", bg,
-                    amountFont(true,  false, amtFnt), Element.ALIGN_RIGHT, false));
-            table.addCell(cell(fmt(bal, decimalPlaces), bg, amtFnt, Element.ALIGN_RIGHT, false));
+            Font debitFnt  = FontFactory.getFont(FontFactory.HELVETICA, 8, DEBIT_RED);
+            Font creditFnt = FontFactory.getFont(FontFactory.HELVETICA, 8, CREDIT_GRN);
+
+            table.addCell(cell(date,                                          bg, cellFnt,  Element.ALIGN_LEFT,  false));
+            table.addCell(cell(desc,                                          bg, cellFnt,  Element.ALIGN_LEFT,  false));
+            table.addCell(cell(isCredit ? "" : fmt(amt, decimalPlaces),       bg, debitFnt, Element.ALIGN_RIGHT, false));
+            table.addCell(cell(isCredit ? fmt(amt, decimalPlaces) : "",       bg, creditFnt,Element.ALIGN_RIGHT, false));
+            table.addCell(cell(fmt(bal, decimalPlaces),                       bg, cellFnt,  Element.ALIGN_RIGHT, false));
         }
 
         // Totals row
-        BaseColor totalBg = new BaseColor(235, 238, 245);
-        table.addCell(cell("", totalBg, totalFnt, Element.ALIGN_LEFT, true));
-        table.addCell(cell("TOTAL", totalBg, totalFnt, Element.ALIGN_LEFT, true));
-        table.addCell(cell(fmt(totalDebit,  decimalPlaces), totalBg,
-                amountFont(false, true, totalFnt), Element.ALIGN_RIGHT, true));
-        table.addCell(cell(fmt(totalCredit, decimalPlaces), totalBg,
-                amountFont(true,  true, totalFnt), Element.ALIGN_RIGHT, true));
-        table.addCell(cell("", totalBg, totalFnt, Element.ALIGN_RIGHT, true));
+        Color totalBg = new Color(235, 238, 245);
+        Font totalDebitFnt  = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, DEBIT_RED);
+        Font totalCreditFnt = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, CREDIT_GRN);
+
+        table.addCell(cell("",                            totalBg, totalFnt,       Element.ALIGN_LEFT,  true));
+        table.addCell(cell("TOTAL",                       totalBg, totalFnt,       Element.ALIGN_LEFT,  true));
+        table.addCell(cell(fmt(totalDebit,  decimalPlaces), totalBg, totalDebitFnt, Element.ALIGN_RIGHT, true));
+        table.addCell(cell(fmt(totalCredit, decimalPlaces), totalBg, totalCreditFnt,Element.ALIGN_RIGHT, true));
+        table.addCell(cell("",                            totalBg, totalFnt,       Element.ALIGN_RIGHT, true));
 
         doc.add(table);
         doc.close();
@@ -298,14 +293,6 @@ public class StatementService {
         return result;
     }
 
-    private static Paragraph divider() {
-        Paragraph p = new Paragraph(" ");
-        p.setSpacingBefore(2);
-        p.setSpacingAfter(2);
-        // Simulate a thin line via underline on an empty string — OpenPDF uses a separator chunk
-        return p;
-    }
-
     private static void addInfoRow(PdfPTable table, String label, String value,
                                    Font labelFnt, Font valueFnt) {
         PdfPCell l = new PdfPCell(new Phrase(label, labelFnt));
@@ -321,8 +308,7 @@ public class StatementService {
         table.addCell(v);
     }
 
-    private static PdfPCell cell(String text, BaseColor bg, Font font,
-                                 int align, boolean bold) {
+    private static PdfPCell cell(String text, Color bg, Font font, int align, boolean bold) {
         PdfPCell c = new PdfPCell(new Phrase(text, font));
         c.setBackgroundColor(bg);
         c.setPaddingTop(4);
@@ -333,13 +319,6 @@ public class StatementService {
         c.setBorderColor(BORDER);
         c.setHorizontalAlignment(align);
         return c;
-    }
-
-    private static Font amountFont(boolean isCredit, boolean bold, Font base) {
-        int style = bold ? Font.BOLD : Font.NORMAL;
-        return FontFactory.getFont(FontFactory.HELVETICA,
-                base.getSize(), style,
-                isCredit ? CREDIT_GRN : DEBIT_RED);
     }
 
     private static String fmt(BigDecimal amount, int decimalPlaces) {
@@ -372,14 +351,13 @@ public class StatementService {
     // ── Page numbers ───────────────────────────────────────────────────────
 
     private static class PageNumbers extends PdfPageEventHelper {
-        private final Font font = FontFactory.getFont(FontFactory.HELVETICA, 7, BaseColor.GRAY);
+        private final Font font = FontFactory.getFont(FontFactory.HELVETICA, 7, Color.GRAY);
 
         @Override
         public void onEndPage(PdfWriter writer, Document document) {
             PdfPTable footer = new PdfPTable(1);
             footer.setTotalWidth(document.getPageSize().getWidth() - 80);
-            PdfPCell cell = new PdfPCell(
-                    new Phrase("Page " + writer.getPageNumber(), font));
+            PdfPCell cell = new PdfPCell(new Phrase("Page " + writer.getPageNumber(), font));
             cell.setBorder(Rectangle.NO_BORDER);
             cell.setHorizontalAlignment(Element.ALIGN_RIGHT);
             footer.addCell(cell);
