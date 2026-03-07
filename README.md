@@ -15,11 +15,12 @@ A multicurrency fintech wallet prototype built on Matera's Digital Twin ledger. 
 | **Sell crypto** | Sell USDC or USDT, receive USD or BRL at live rate |
 | **Convert fiat** | Swap between USD and BRL at live rate |
 | **P2P transfer** | Send any currency to another platform user by email — debit sender, credit recipient |
-| **Live transactions** | Up to 50 most-recent transactions per account from mini-core, newest first |
+| **Live transactions** | Up to 50 most-recent transactions per account, enriched with i18n summary (e.g. "Sent 25.00 USD to John Doe") |
+| **Transaction detail** | Tap any transaction to see a full detail modal with labeled fields resolved from metadata |
 | **Exchange rates** | Refreshed every 10 minutes from open.er-api.com; stablecoin pairs locked at 1:1 |
-| **Audit trail** | Every buy/sell/convert logs 4 mini-core tx IDs; every P2P logs 2 tx IDs |
+| **Audit trail** | Every buy/sell/convert logs 4 mini-core tx IDs; every P2P logs 2 tx IDs + metadata blob |
 | **Welcome credit** | New users receive 10,000 BRL (Cash Deposit, code 10001) on first login |
-| **Settings** | Language (English) and timezone selector (Brazil + US zones) |
+| **Settings** | Language (English / Português Brasil) and timezone selector (Brazil + US zones) |
 | **PWA** | Installable on iOS, Android, and desktop Chrome |
 | **Receive (prototype)** | Shows placeholder QR / address with a "PROTOTYPE" watermark — real camera/address wiring not yet implemented |
 
@@ -80,9 +81,9 @@ User (browser / PWA)
 
 | Store | What lives there |
 |---|---|
-| `digitaltwinapp` schema (PostgreSQL) | Users, currencies, user_accounts, exchange_rates, conversions, p2p_transactions |
+| `digitaltwinapp` schema (PostgreSQL) | Users, currencies, user_accounts, exchange_rates, conversions, p2p_transactions, transaction_codes, transaction_schemas, transaction_schema_i18n, transaction_metadata |
 | `minicore` schema (PostgreSQL) | Accounts, transactions, balances (managed by mini-core Flask API) |
-| `localStorage` (browser) | Wallet metadata cache (currencies, decimal_places); selected timezone |
+| `localStorage` (browser) | Wallet metadata cache (`dt_wallets`); timezone (`dt_timezone`); language (`dt_lang`) |
 
 ---
 
@@ -96,7 +97,7 @@ User (browser / PWA)
 | Deployment | Cloudflare Workers + Static Assets |
 | API | Spring Boot 3.3 / Java 21 |
 | Auth | Google OAuth (implicit flow) + server-side domain + DB check |
-| Database | PostgreSQL (`digitaltwinapp` schema, 13 Liquibase migrations) |
+| Database | PostgreSQL (`digitaltwinapp` schema, 20 Liquibase migrations) |
 | Core Banking | Mini-Core (Flask, `localhost:5001`) |
 | Tunnel | Cloudflare Tunnel (`digitaltwinapp-api.materalabs.us → localhost:8081`) |
 | PWA | Web App Manifest + Service Worker |
@@ -107,7 +108,7 @@ User (browser / PWA)
 
 ```
 src/
-  App.tsx           # All UI: Dashboard, modals (Buy/Sell/Convert/Send/Receive/Settings), nav, login
+  App.tsx           # All UI: Dashboard, TransactionDetailModal, modals (Buy/Sell/Convert/Send/Receive/Settings), nav, login
   store.tsx         # React Context: wallet state, localStorage cache, refreshWallets
   types.ts          # TypeScript types + TX transaction code constants
   main.tsx          # React DOM entry point
@@ -116,16 +117,19 @@ public/
   manifest.json     # PWA manifest
   sw.js             # Service worker (stale-while-revalidate)
   icon.svg          # App icon
+  erd/              # SchemaSpy ERD output (digitaltwinapp schema)
 api/                # Spring Boot Java API (port 8081)
   src/main/java/.../
     client/         # MiniCoreClient: account CRUD + transaction creation
-    controller/     # AuthController, WalletController (wallets, convert, p2p, rate, transactions, user lookup)
+    controller/     # AuthController, WalletController (wallets, convert, p2p, rate, transactions, detail, user lookup)
     listener/       # PostgresNotificationListener: pg_notify → provision accounts
     model/          # WalletDto, ConversionRequest, ConversionResultDto, P2pRequest
-    service/        # Auth, WalletService (balances, transactions, rates, p2p), ConversionService, ExchangeRateService, UserAccountProvisioningService
+    service/        # Auth, WalletService (balances, transactions+metadata, rates, p2p), ConversionService,
+                    # ExchangeRateService, UserAccountProvisioningService,
+                    # SchemaRegistryService, TransactionDisplayService, TransactionMetadataBackfillService
     config/         # WebConfig (CORS), SecurityConfig
   src/main/resources/
-    db/changelog/   # 13 Liquibase migrations → digitaltwinapp schema
+    db/changelog/   # 20 Liquibase migrations → digitaltwinapp schema
     application.yml
     application-local.yml  # gitignored — DB credentials
 worker.ts           # Cloudflare Worker: API proxy + prefix strip + SPA fallback
@@ -152,6 +156,13 @@ tunnel-deploy.sh    # Starts cloudflared tunnel → localhost:8081
 | 011 | `conversions` (buy/sell/convert audit: 4 mini-core tx IDs per record) |
 | 012 | `p2p_transactions` (id, created_at TIMESTAMPTZ, amount, debit_tx_id, credit_tx_id) |
 | 013 | Simplify p2p_transactions (drop redundant user/currency FKs) |
+| 014 | `transaction_codes` — curated subset of mini-core codes with domain labels |
+| 015 | `transaction_schemas` — JSON Schema (Draft 2020-12) per transaction code |
+| 016 | `transaction_schema_i18n` — summary + detail display templates per code × language |
+| 017 | Add external wallet send/receive codes (50004, 40004) |
+| 018 | Seed JSON schemas for all 12 transaction codes |
+| 019 | `transaction_metadata` — one row per ledger transaction, linked by `ledger_id` |
+| 020 | Patch existing schemas: add `schema_version` as required first field |
 
 ### Account Number Formula
 `account_number = user_id × 1000 + currency_id`
@@ -177,7 +188,8 @@ All endpoints require an active session (Google OAuth). Returns `401` if unauthe
 | `GET` | `/api/auth/me` | Return current session user |
 | `POST` | `/api/auth/logout` | Destroy session |
 | `GET` | `/api/wallets` | List user's wallets with live balances |
-| `GET` | `/api/wallets/transactions?currencyCode=X` | Up to 50 recent transactions from mini-core |
+| `GET` | `/api/wallets/transactions?currencyCode=X&lang=en` | Up to 50 recent transactions enriched with i18n `summary` field |
+| `GET` | `/api/wallets/transactions/{ledgerId}?lang=en` | Transaction detail — resolved `summary` + labeled `fields[]` |
 | `GET` | `/api/wallets/rate?from=X&to=Y` | Live exchange rate from DB |
 | `POST` | `/api/wallets/convert` | Buy / sell / convert (4 mini-core transactions) |
 | `POST` | `/api/wallets/p2p` | P2P transfer to another platform user |
@@ -248,6 +260,8 @@ Login is Google OAuth restricted to `@matera.com` accounts:
 Wallet metadata (currency names, decimal places, account IDs) is cached in `localStorage` under `dt_wallets` after the first successful API call. On subsequent page loads, cached data is displayed instantly while the API fetches fresh balances in the background. Cache is cleared on logout.
 
 Timezone preference is stored in `localStorage` under `dt_timezone`. Defaults to the browser's detected timezone. Transaction timestamps are converted to the selected timezone for display.
+
+Language preference is stored in `localStorage` under `dt_lang` (BCP-47, e.g. `en`, `pt-BR`). Defaults to `en`. Passed as `&lang=` on all transaction API calls so summaries are returned in the user's chosen language.
 
 ---
 
