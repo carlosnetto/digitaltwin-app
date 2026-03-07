@@ -81,3 +81,83 @@ JWT was considered and rejected in favor of server-side sessions for the followi
 
 **If API keys are added in the future**, the same reasoning applies — validate via
 a fast cache lookup, not a signed token.
+
+---
+
+## Transaction Metadata (partially implemented)
+
+The DB layer is fully in place (migrations 014–019, backfill service, `transaction_metadata`
+table). The following pieces are NOT yet built.
+
+### SchemaRegistryService (validation, not built)
+Planned: a `@Service` holding a `ConcurrentHashMap<Integer, JsonSchema>` of pre-compiled
+networknt Draft 2020-12 schemas, loaded at `@PostConstruct` from `digitaltwinapp.transaction_schemas`
+and refreshable at runtime via an `AtomicReference` swap (zero-downtime schema updates).
+
+Until this is built, metadata blobs are written to `transaction_metadata` without validation.
+The JSON schemas seeded in `transaction_schemas` are the authoritative contract — implement
+validation before exposing metadata to external consumers.
+
+Dependency to add when implementing:
+```xml
+<dependency>
+    <groupId>com.networknt</groupId>
+    <artifactId>json-schema-validator</artifactId>
+    <version>1.5.6</version>  <!-- check for latest -->
+</dependency>
+```
+
+### TransactionDisplayService (template resolution, not built)
+`transaction_schema_i18n` holds `summary_data` (string template) and `detailed_data`
+(JSON array of `{"label":"...", "value":"${path}"}` objects) seeded for `en` and `pt-BR`.
+
+Planned: a service that accepts a `trans_code`, `lang`, and the `metadata` JSONB blob,
+resolves `${dot.path}` placeholders against the blob, and returns a structured display
+object for the API response. Without this, the i18n templates are data-only and unused.
+
+### schema_version is always 1 — versioning mechanism deferred
+`transaction_metadata.schema_version` defaults to 1 and is hardcoded as `1` in all
+current inserts (backfill service and, eventually, ConversionService / WalletService).
+
+Every metadata blob already carries `"schema_version": 1` as its first field (enforced
+by `insertMetadata()` via `LinkedHashMap` ordering and validated by the JSON schemas in
+`transaction_schemas`). This means all data currently stored in the ledger is already
+self-tagged as v1 — when versioning arrives, no rework is needed on existing rows and
+no migration of stored JSONB blobs is required. New v2 transactions simply write
+`"schema_version": 2`; v1 rows stay valid and queryable as-is.
+
+When a breaking change to a metadata shape is needed:
+1. Add a `schema_version INT NOT NULL DEFAULT 1` column to `transaction_schemas`
+2. Insert the new schema as a second row with `schema_version = 2` (PK becomes
+   `(trans_code, schema_version)` — migration required)
+3. Write new transactions with `schema_version = 2`
+4. Old rows remain queryable at `schema_version = 1`
+
+Do not implement until a v2 schema is actually required.
+
+### Forward metadata capture (ConversionService + WalletService, not built)
+New transactions created after the backfill window do NOT yet write to `transaction_metadata`.
+Before removing `TransactionMetadataBackfillService`, update:
+
+- `ConversionService` — insert 2 rows (debit + credit) into `transaction_metadata` after
+  the 4 mini-core transaction calls succeed
+- `WalletService.p2pTransfer()` — insert 2 rows (sent + received) after the mini-core calls
+
+Use `ON CONFLICT (ledger_id) WHERE ledger_id IS NOT NULL DO NOTHING` (same as backfill)
+so a double-post is harmless.
+
+**Self-contained blob requirement:** every metadata map passed to the insert helper must
+have `schema_version` as its **first key** (use `LinkedHashMap`, put `schema_version` before
+all domain fields). This mirrors what `TransactionMetadataBackfillService.insertMetadata()`
+already does. The blob must be self-describing so that a ledger holding the raw JSON can
+reconstruct the display string and validate the payload independently, years later, without
+access to our internal tables.
+
+### Remove TransactionMetadataBackfillService
+Once forward capture is in place and all environments confirm:
+```sql
+SELECT COUNT(*) FROM digitaltwinapp.transaction_metadata;
+-- equals 2× p2p_transactions + 2× conversions rows
+```
+...and the backfill log reports `0 new rows` on startup, delete
+`TransactionMetadataBackfillService.java`.

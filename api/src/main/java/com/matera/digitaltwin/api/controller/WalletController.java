@@ -6,6 +6,7 @@ import com.matera.digitaltwin.api.model.ConversionResultDto;
 import com.matera.digitaltwin.api.model.UserInfo;
 import com.matera.digitaltwin.api.model.WalletDto;
 import com.matera.digitaltwin.api.service.ConversionService;
+import com.matera.digitaltwin.api.service.TransactionDisplayService;
 import com.matera.digitaltwin.api.service.WalletService;
 import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 public class WalletController {
@@ -45,13 +48,49 @@ public class WalletController {
         return ResponseEntity.ok(wallets);
     }
 
+    /**
+     * Returns up to 50 recent transactions, each optionally enriched with a
+     * human-readable {@code summary} string resolved from transaction_metadata.
+     *
+     * @param currencyCode the wallet to query (e.g. "USD", "USDC")
+     * @param lang         BCP-47 language tag for the summary string (default: "en")
+     */
     @GetMapping("/api/wallets/transactions")
-    public ResponseEntity<?> getTransactions(@RequestParam String currencyCode, HttpSession session) {
+    public ResponseEntity<?> getTransactions(@RequestParam String currencyCode,
+                                             @RequestParam(defaultValue = "en") String lang,
+                                             HttpSession session) {
         UserInfo user = (UserInfo) session.getAttribute("user");
         if (user == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
         }
-        return ResponseEntity.ok(walletService.getTransactions(user.email(), currencyCode));
+        return ResponseEntity.ok(walletService.getTransactions(user.email(), currencyCode, lang));
+    }
+
+    /**
+     * Returns the full detail display for a single transaction — summary + labeled fields.
+     * Called when the user taps a transaction row. One SQL query against transaction_metadata;
+     * no batch needed since only one transaction is requested at a time.
+     *
+     * Returns 404 if no metadata exists for this transaction (e.g. a deposit code that
+     * does not carry extra metadata). The UI should fall back to showing the raw ledger data.
+     *
+     * @param ledgerId mini-core transaction_id (numeric, passed as a string in the path)
+     * @param lang     BCP-47 language tag (default: "en")
+     */
+    @GetMapping("/api/wallets/transactions/{ledgerId}")
+    public ResponseEntity<?> getTransactionDetail(@PathVariable String ledgerId,
+                                                  @RequestParam(defaultValue = "en") String lang,
+                                                  HttpSession session) {
+        if (session.getAttribute("user") == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Not authenticated"));
+        }
+        Optional<TransactionDisplayService.ResolvedDisplay> detail =
+                walletService.getTransactionDetail(ledgerId, lang);
+
+        return detail
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "No metadata for transaction " + ledgerId)));
     }
 
     @GetMapping("/api/wallets/rate")

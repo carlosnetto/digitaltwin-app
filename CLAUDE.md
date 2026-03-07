@@ -11,7 +11,7 @@ Originally scaffolded from a Google AI Studio template. Gemini API removed.
 ### Frontend (PWA)
 ```
 src/
-  App.tsx       # All UI: Dashboard, WalletCard, TransactionList, modals, QRScanner, BottomNav, Sidebar, Login
+  App.tsx       # All UI: Dashboard, WalletCard, TransactionList, TransactionDetailModal, modals, QRScanner, BottomNav, Sidebar, Login
   store.tsx     # React Context: wallet state, transaction list, sendFunds, generateReceiveDetails
   types.ts      # Wallet, Transaction interfaces + TX constants (transaction codes from mini-core)
   main.tsx      # ReactDOM.createRoot entry
@@ -35,10 +35,13 @@ api/
     listener/PostgresNotificationListener.java  # pg_notify daemon → provisions accounts on new user
     model/                           # UserInfo, WalletDto, ConversionRequest, ConversionResultDto, P2pRequest
     service/GoogleAuthService.java   # token → userinfo → domain check → DB check; auto-inserts new users
-    service/WalletService.java       # balances, transactions, rates, P2P transfer, user lookup
+    service/WalletService.java       # balances, transactions (with metadata enrichment + 5min cache), rates, P2P transfer
     service/UserAccountProvisioningService.java # creates mini-core accounts + 10k BRL welcome credit; 60s catch-all @Scheduled
     service/ExchangeRateService.java # @Scheduled every 10min from open.er-api.com
     service/ConversionService.java   # 4 mini-core transactions + conversions table record
+    service/SchemaRegistryService.java          # pre-compiled networknt JSON schemas loaded at @PostConstruct; volatile swap
+    service/TransactionDisplayService.java      # i18n template cache; en eager-loaded, others lazy; ${path} placeholder resolution
+    service/TransactionMetadataBackfillService.java  # ApplicationRunner; backfills transaction_metadata for historical txs
     config/WebConfig.java            # CORS: allowed origins from app.allowed-origins
   src/main/resources/
     db/changelog/
@@ -55,9 +58,20 @@ api/
       011-create-conversions.xml     # conversions table with 4 tx IDs
       012-create-p2p-transactions.xml # p2p_transactions (id, created_at TIMESTAMPTZ, amount, debit_tx_id, credit_tx_id)
       013-simplify-p2p-transactions.xml # drop redundant user/currency FKs from p2p_transactions
+      014-create-transaction-codes.xml    # transaction_codes: curated subset of mini-core codes
+      015-create-transaction-schemas.xml  # transaction_schemas: JSON Schema (Draft 2020-12) per code
+      016-create-transaction-schema-i18n.xml  # transaction_schema_i18n: summary + detail templates per code × lang
+      017-add-external-wallet-codes.xml   # adds codes for external wallet send/receive (50004, 40004)
+      018-seed-transaction-schemas.xml    # seeds JSON schemas for all 12 codes (schema_version first field)
+      019-create-transaction-metadata.xml # transaction_metadata: one row per ledger tx, linked by ledger_id
+      020-add-schema-version-to-metadata-blobs.xml  # patches existing schemas to add schema_version as required field
     application.yml                  # port 8081, Liquibase, CORS (includes https://materalabs.us)
     application-local.yml            # gitignored — DB credentials
     application-local.yml.example    # template for new devs
+  TRANSACTION-METADATA.md  # full system doc: DB tables, schemas, i18n, caching layers, API, backfill, versioning
+  JAVA.md                  # Java coding conventions for this project
+  SPRING.md                # Spring Boot conventions for this project
+  TODO.md                  # API task backlog (ownership checks, API keys, forward metadata capture, etc.)
 ```
 
 **Run:** `cd api && mvn spring-boot:run -Dspring-boot.run.profiles=local`
@@ -200,6 +214,19 @@ useEffect(() => {
 
 Rate display is tri-state: rate shown / error+retry button / loading spinner. Never show the Confirm button while `rate === null`.
 
+### Language & Timezone Preferences (frontend)
+
+Both are stored in `localStorage` and follow the same pattern:
+
+```typescript
+const [lang, setLang] = useState(() => localStorage.getItem('dt_lang') ?? 'en');
+const handleLangChange = (l: string) => { setLang(l); localStorage.setItem('dt_lang', l); };
+```
+
+Keys: `dt_lang` (BCP-47, e.g. `'en'`, `'pt-BR'`), `dt_timezone` (IANA, e.g. `'America/Sao_Paulo'`).
+`lang` is passed down to `Dashboard` and included as `&lang=` on all transaction API calls.
+User changes it via the language `<select>` in `SettingsModal`.
+
 ### PROTOTYPE Watermark
 
 `ReceiveModal` (and any other modal showing placeholder UI) uses an absolute overlay:
@@ -265,11 +292,14 @@ Wallet balances are live — fetched from mini-core on every page load and after
 | `GET` | `/api/auth/me` | Current session user |
 | `POST` | `/api/auth/logout` | Destroy session |
 | `GET` | `/api/wallets` | Live balances for all user accounts |
-| `GET` | `/api/wallets/transactions?currencyCode=X` | Up to 50 recent transactions, newest first |
+| `GET` | `/api/wallets/transactions?currencyCode=X&lang=en` | Up to 50 recent transactions, enriched with i18n `summary` field |
+| `GET` | `/api/wallets/transactions/{ledgerId}?lang=en` | Single transaction detail — resolved `summary` + labeled `fields[]` |
 | `GET` | `/api/wallets/rate?from=X&to=Y` | Live exchange rate |
 | `POST` | `/api/wallets/convert` | Buy / sell / convert (4 mini-core txs) |
 | `POST` | `/api/wallets/p2p` | P2P transfer to another platform user |
 | `GET` | `/api/users/lookup?email=X` | Resolve email → name (P2P confirmation step) |
+
+`lang` defaults to `"en"`. Currently seeded languages: `en`, `pt-BR`. Falls back to `en` if the requested language has no templates for a given transaction code.
 
 ## Buy/Sell/Convert
 
@@ -295,6 +325,30 @@ Before posting: `ConversionService` checks `available_balance >= fromAmount` via
 3. Inserts into `digitaltwinapp.p2p_transactions` (id, created_at TIMESTAMPTZ, amount, debit_tx_id, credit_tx_id)
 
 `GET /api/users/lookup?email=X` — used by the frontend before the confirmation step to show the recipient's name. Returns `{ name }` or 404.
+
+## Transaction Metadata
+
+Every transaction in mini-core carries only raw financial facts (amount, date, code). Domain context — who you sent to, what was converted at what rate, which blockchain — is stored in `digitaltwinapp.transaction_metadata` and linked by `ledger_id` (the mini-core `transaction_id` as string).
+
+Full system documented in `api/TRANSACTION-METADATA.md`. Key points:
+
+- **`transaction_schemas`** — one JSON Schema (Draft 2020-12) per transaction code, enforcing the metadata blob shape. Pre-compiled by `SchemaRegistryService` at startup.
+- **`transaction_schema_i18n`** — `summary_data` (single string template) and `detailed_data` (labeled fields) per code × language. Resolved at runtime by `TransactionDisplayService` using `${dot.path}` placeholders against the metadata blob.
+- **Self-contained blobs** — every blob starts with `"schema_version": 1` as its first key (enforced via `LinkedHashMap` in `insertMetadata()`). A blob forwarded to an external ledger is fully self-describing without access to our internal tables.
+- **Caching** — three layers: `SchemaRegistryService` (compiled schemas, startup), `TransactionDisplayService` (parsed templates, lazy per language), `WalletService.metadataCache` (raw metadata blobs, 5-min TTL, language-agnostic).
+- **Transaction list** — `GET /api/wallets/transactions` batch-fetches metadata for all returned IDs in one `IN` query and returns an optional `summary` string per transaction. Frontend shows `summary` if present, falls back to `transaction_description`.
+- **Transaction detail** — `GET /api/wallets/transactions/{ledgerId}` returns `{ summary, fields: [{ label, value }] }`. Frontend opens `TransactionDetailModal` on tap; cache-first so common case is zero DB queries.
+
+### Liquibase: modifying already-applied changesets
+
+Never edit a changeset that has already been applied to any environment — Liquibase stores its checksum and will refuse to start if the file content changes. Two safe options:
+
+1. **`<validCheckSum>`** — add the old checksum to the changeset to accept both the historical DB state and the new file. Use when the SQL was already executed and the data change is handled separately (e.g. a follow-up migration).
+2. **New migration** — always the safest. Add a new numbered changeset that patches the data.
+
+Migration 018 uses option 1: the file was updated for documentation clarity, `<validCheckSum>9:08bb6e86c48052832c073df88ebc3565</validCheckSum>` accepts the already-applied version, and migration 020 handles the actual data patch.
+
+**Never change a checksum in `DATABASECHANGELOG` directly** — that table is Liquibase's source of truth and manual edits corrupt the audit trail.
 
 ## QR Scanner
 

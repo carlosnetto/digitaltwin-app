@@ -52,6 +52,20 @@
             <artifactId>liquibase-core</artifactId>
         </dependency>
 
+        <!-- UUIDv7 (time-sortable) for transaction_metadata.id -->
+        <dependency>
+            <groupId>com.github.f4b6a3</groupId>
+            <artifactId>uuid-creator</artifactId>
+            <version>6.0.0</version>
+        </dependency>
+
+        <!-- JSON Schema Draft 2020-12 validation for transaction_metadata -->
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+            <version>1.5.4</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="014-create-transaction-codes" author="digitaltwinapp-api">
+        <sql splitStatements="true">
+            CREATE TABLE digitaltwinapp.transaction_codes (
+                code  INTEGER      NOT NULL,
+                label VARCHAR(100) NOT NULL,
+                CONSTRAINT transaction_codes_pkey PRIMARY KEY (code)
+            );
+
+            -- Seeded from TX constants in src/types.ts (app-layer curated subset).
+            -- Source of truth for this app — independent of minicore.transaction_codes.
+            -- Label casing follows types.ts (title case), not minicore (ALL CAPS).
+
+            -- Credits (10xxx)
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (10006, 'Direct Deposit - Payroll');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (10011, 'ACH Credit');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (10015, 'Zelle Received');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (10016, 'RTP Received');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (10017, 'FedNow Received');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (10018, 'Internal Transfer In');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (10019, 'External Transfer In');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (10022, 'Merchant Credit / Refund');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (10026, 'Reward / Cashback');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (10027, 'P2P Received');
+
+            -- Debits (20xxx)
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (20001, 'Debit Card Purchase');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (20002, 'Debit Card Purchase - Online');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (20003, 'Debit Card Purchase - Recurring');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (20007, 'ATM Withdrawal');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (20016, 'Zelle Sent');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (20019, 'Bill Payment');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (20020, 'Bill Payment - Recurring');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (20021, 'Internal Transfer Out');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (20023, 'Loan Payment');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (20026, 'P2P Sent');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (20035, 'Credit Card Payment');
+
+            -- Fees (30xxx)
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (30001, 'Monthly Maintenance Fee');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (30004, 'ATM Fee - Non-Network');
+
+            -- Crypto credits (40xxx) — added to minicore in migrations 014 and 015
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (40002, 'Crypto Conversion Received');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (40003, 'Crypto Purchase Received');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (40005, 'Crypto Sale Proceeds');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (40006, 'Currency Conversion In');
+
+            -- Crypto debits (50xxx) — added to minicore in migrations 014 and 015
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (50002, 'Crypto Conversion Sent');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (50003, 'Crypto Sale');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (50005, 'Crypto Purchase Payment');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (50006, 'Currency Conversion Out');
+        </sql>
+        <rollback>
+            DROP TABLE IF EXISTS digitaltwinapp.transaction_codes;
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="017-add-external-wallet-codes" author="digitaltwinapp-api">
+        <sql splitStatements="true">
+            -- These codes exist in minicore.transaction_codes (005-seed-data.xml) but were
+            -- not in the initial digitaltwinapp curated subset. Added now to support
+            -- on-chain send and receive flows driven by the backoffice Solana layer.
+
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (40004, 'Received from External Wallet');
+            INSERT INTO digitaltwinapp.transaction_codes VALUES (50004, 'Sent to External Wallet');
+
+            -- ── Sent to External Wallet (50004) ───────────────────────────────────────
+            -- tx_hash is optional: present after on-chain confirmation, absent while pending.
+            -- The display service skips a detail row when its ${path} resolves to null.
+
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                50004, 'en',
+                'Sent ${amount} ${currency} on ${blockchain}',
+                '[{"label":"Destination","value":"${destination_address}"},{"label":"Blockchain","value":"${blockchain}"},{"label":"Amount","value":"${amount} ${currency}"},{"label":"Transaction Hash","value":"${tx_hash}"}]'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                50004, 'pt-BR',
+                'Enviou ${amount} ${currency} na rede ${blockchain}',
+                '[{"label":"Destino","value":"${destination_address}"},{"label":"Rede","value":"${blockchain}"},{"label":"Valor","value":"${amount} ${currency}"},{"label":"Hash da Transação","value":"${tx_hash}"}]'::jsonb
+            );
+
+            -- ── Received from External Wallet (40004) ─────────────────────────────────
+            -- tx_hash and blockchain are always present (captured by the monitoring layer).
+            -- source_address is optional: not all blockchains expose the sender reliably.
+
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                40004, 'en',
+                'Received ${amount} ${currency} on ${blockchain}',
+                '[{"label":"Blockchain","value":"${blockchain}"},{"label":"Transaction Hash","value":"${tx_hash}"},{"label":"Amount","value":"${amount} ${currency}"},{"label":"Source Address","value":"${source_address}"}]'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                40004, 'pt-BR',
+                'Recebeu ${amount} ${currency} na rede ${blockchain}',
+                '[{"label":"Rede","value":"${blockchain}"},{"label":"Hash da Transação","value":"${tx_hash}"},{"label":"Valor","value":"${amount} ${currency}"},{"label":"Endereço de Origem","value":"${source_address}"}]'::jsonb
+            );
+        </sql>
+        <rollback>
+            DELETE FROM digitaltwinapp.transaction_schema_i18n WHERE trans_code IN (40004, 50004);
+            DELETE FROM digitaltwinapp.transaction_codes WHERE code IN (40004, 50004);
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

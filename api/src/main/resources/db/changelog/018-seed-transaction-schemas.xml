@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="018-seed-transaction-schemas" author="digitaltwinapp-api">
+        <!-- Old checksum accepted: 018 was applied before schema_version was added as the first field.
+             Migration 020 patches the already-stored JSON schemas to include schema_version.
+             The source file was updated to reflect the intended final shape for documentation purposes. -->
+        <validCheckSum>9:08bb6e86c48052832c073df88ebc3565</validCheckSum>
+        <sql splitStatements="true">
+            -- JSON Schema draft 2020-12 for each transaction code that captures metadata
+            -- beyond what the ledger already stores (amount, date, description).
+            --
+            -- Design rules applied uniformly:
+            --   1. schema_version is ALWAYS the first field in required[] and properties{}
+            --      so that any blob stored in an external ledger is self-contained: a reader
+            --      can identify the exact schema and display templates that apply without
+            --      access to our internal tables, even years later on a different system.
+            --   2. additionalProperties:false at root  — no undeclared fields accepted
+            --   3. "custom" object with additionalProperties:true  — escape hatch for
+            --      caller-specific fields without breaking validation
+            --   4. amounts as "type":"number","exclusiveMinimum":0  — positive, non-zero;
+            --      Jackson serialises BigDecimal as a JSON number, so no string encoding
+            --   5. Optional fields are declared in properties but omitted from required[]
+            --      (e.g. tx_hash for pending sends, source_address for received crypto)
+            --   6. format:"email" is an annotation only; networknt treats it as advisory
+            --      unless format-validation is explicitly enabled in SchemaRegistryService
+
+
+            -- ── P2P Sent (20026) ──────────────────────────────────────────────────────
+            -- All four fields known at posting time: recipient resolved via /api/users/lookup
+            -- before the transaction is submitted.
+
+            INSERT INTO digitaltwinapp.transaction_schemas VALUES (
+                20026,
+                '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","recipient_email","recipient_name","amount","currency"],"properties":{"schema_version":{"type":"integer","minimum":1},"recipient_email":{"type":"string","format":"email"},"recipient_name":{"type":"string","minLength":1},"amount":{"type":"number","exclusiveMinimum":0},"currency":{"type":"string","minLength":2,"maxLength":10},"custom":{"type":"object","additionalProperties":true}},"additionalProperties":false}'::jsonb
+            );
+
+            -- ── P2P Received (10027) ──────────────────────────────────────────────────
+            -- Mirror of 20026: sender details known at posting time on the recipient side.
+
+            INSERT INTO digitaltwinapp.transaction_schemas VALUES (
+                10027,
+                '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","sender_email","sender_name","amount","currency"],"properties":{"schema_version":{"type":"integer","minimum":1},"sender_email":{"type":"string","format":"email"},"sender_name":{"type":"string","minLength":1},"amount":{"type":"number","exclusiveMinimum":0},"currency":{"type":"string","minLength":2,"maxLength":10},"custom":{"type":"object","additionalProperties":true}},"additionalProperties":false}'::jsonb
+            );
+
+            -- ── Conversion schema (8 codes) ───────────────────────────────────────────
+            -- All buy/sell/convert operations share the same metadata shape:
+            -- from_amount + from_currency  →  to_amount + to_currency  at rate.
+            -- The four transactions per conversion event (user debit, user credit,
+            -- pool credit, pool debit) all reference the same conversion record, so
+            -- all four carry identical metadata.
+            --
+            --   Buy  fiat→crypto : 50005 (user fiat debit)   + 40003 (user crypto credit)
+            --   Sell crypto→fiat : 50003 (user crypto debit) + 40005 (user fiat credit)
+            --   Convert crypto↔  : 50002 (user crypto debit) + 40002 (user crypto credit)
+            --   Convert fiat↔    : 50006 (user fiat debit)   + 40006 (user fiat credit)
+
+            INSERT INTO digitaltwinapp.transaction_schemas VALUES (
+                50005,
+                '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","from_amount","from_currency","to_amount","to_currency","rate"],"properties":{"schema_version":{"type":"integer","minimum":1},"from_amount":{"type":"number","exclusiveMinimum":0},"from_currency":{"type":"string","minLength":2,"maxLength":10},"to_amount":{"type":"number","exclusiveMinimum":0},"to_currency":{"type":"string","minLength":2,"maxLength":10},"rate":{"type":"number","exclusiveMinimum":0},"custom":{"type":"object","additionalProperties":true}},"additionalProperties":false}'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schemas VALUES (
+                40003,
+                '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","from_amount","from_currency","to_amount","to_currency","rate"],"properties":{"schema_version":{"type":"integer","minimum":1},"from_amount":{"type":"number","exclusiveMinimum":0},"from_currency":{"type":"string","minLength":2,"maxLength":10},"to_amount":{"type":"number","exclusiveMinimum":0},"to_currency":{"type":"string","minLength":2,"maxLength":10},"rate":{"type":"number","exclusiveMinimum":0},"custom":{"type":"object","additionalProperties":true}},"additionalProperties":false}'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schemas VALUES (
+                50003,
+                '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","from_amount","from_currency","to_amount","to_currency","rate"],"properties":{"schema_version":{"type":"integer","minimum":1},"from_amount":{"type":"number","exclusiveMinimum":0},"from_currency":{"type":"string","minLength":2,"maxLength":10},"to_amount":{"type":"number","exclusiveMinimum":0},"to_currency":{"type":"string","minLength":2,"maxLength":10},"rate":{"type":"number","exclusiveMinimum":0},"custom":{"type":"object","additionalProperties":true}},"additionalProperties":false}'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schemas VALUES (
+                40005,
+                '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","from_amount","from_currency","to_amount","to_currency","rate"],"properties":{"schema_version":{"type":"integer","minimum":1},"from_amount":{"type":"number","exclusiveMinimum":0},"from_currency":{"type":"string","minLength":2,"maxLength":10},"to_amount":{"type":"number","exclusiveMinimum":0},"to_currency":{"type":"string","minLength":2,"maxLength":10},"rate":{"type":"number","exclusiveMinimum":0},"custom":{"type":"object","additionalProperties":true}},"additionalProperties":false}'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schemas VALUES (
+                50002,
+                '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","from_amount","from_currency","to_amount","to_currency","rate"],"properties":{"schema_version":{"type":"integer","minimum":1},"from_amount":{"type":"number","exclusiveMinimum":0},"from_currency":{"type":"string","minLength":2,"maxLength":10},"to_amount":{"type":"number","exclusiveMinimum":0},"to_currency":{"type":"string","minLength":2,"maxLength":10},"rate":{"type":"number","exclusiveMinimum":0},"custom":{"type":"object","additionalProperties":true}},"additionalProperties":false}'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schemas VALUES (
+                40002,
+                '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","from_amount","from_currency","to_amount","to_currency","rate"],"properties":{"schema_version":{"type":"integer","minimum":1},"from_amount":{"type":"number","exclusiveMinimum":0},"from_currency":{"type":"string","minLength":2,"maxLength":10},"to_amount":{"type":"number","exclusiveMinimum":0},"to_currency":{"type":"string","minLength":2,"maxLength":10},"rate":{"type":"number","exclusiveMinimum":0},"custom":{"type":"object","additionalProperties":true}},"additionalProperties":false}'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schemas VALUES (
+                50006,
+                '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","from_amount","from_currency","to_amount","to_currency","rate"],"properties":{"schema_version":{"type":"integer","minimum":1},"from_amount":{"type":"number","exclusiveMinimum":0},"from_currency":{"type":"string","minLength":2,"maxLength":10},"to_amount":{"type":"number","exclusiveMinimum":0},"to_currency":{"type":"string","minLength":2,"maxLength":10},"rate":{"type":"number","exclusiveMinimum":0},"custom":{"type":"object","additionalProperties":true}},"additionalProperties":false}'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schemas VALUES (
+                40006,
+                '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","from_amount","from_currency","to_amount","to_currency","rate"],"properties":{"schema_version":{"type":"integer","minimum":1},"from_amount":{"type":"number","exclusiveMinimum":0},"from_currency":{"type":"string","minLength":2,"maxLength":10},"to_amount":{"type":"number","exclusiveMinimum":0},"to_currency":{"type":"string","minLength":2,"maxLength":10},"rate":{"type":"number","exclusiveMinimum":0},"custom":{"type":"object","additionalProperties":true}},"additionalProperties":false}'::jsonb
+            );
+
+            -- ── Sent to External Wallet (50004) ───────────────────────────────────────
+            -- destination_address and blockchain are required at submission time.
+            -- tx_hash is OPTIONAL: absent while the transaction is pending on-chain,
+            -- populated by the backoffice monitoring layer once the tx is confirmed.
+
+            INSERT INTO digitaltwinapp.transaction_schemas VALUES (
+                50004,
+                '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","destination_address","blockchain","amount","currency"],"properties":{"schema_version":{"type":"integer","minimum":1},"destination_address":{"type":"string","minLength":1},"blockchain":{"type":"string","minLength":1},"amount":{"type":"number","exclusiveMinimum":0},"currency":{"type":"string","minLength":2,"maxLength":10},"tx_hash":{"type":"string","minLength":1},"custom":{"type":"object","additionalProperties":true}},"additionalProperties":false}'::jsonb
+            );
+
+            -- ── Received from External Wallet (40004) ─────────────────────────────────
+            -- blockchain and tx_hash are ALWAYS present: captured by the backoffice
+            -- WalletMonitoringService which only inserts a received_transaction once
+            -- the on-chain confirmation is observed.
+            -- source_address is OPTIONAL: Solana and EVM expose the sender but some
+            -- chains or transaction types do not reliably provide it.
+
+            INSERT INTO digitaltwinapp.transaction_schemas VALUES (
+                40004,
+                '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","blockchain","tx_hash","amount","currency"],"properties":{"schema_version":{"type":"integer","minimum":1},"blockchain":{"type":"string","minLength":1},"tx_hash":{"type":"string","minLength":1},"amount":{"type":"number","exclusiveMinimum":0},"currency":{"type":"string","minLength":2,"maxLength":10},"source_address":{"type":"string","minLength":1},"custom":{"type":"object","additionalProperties":true}},"additionalProperties":false}'::jsonb
+            );
+        </sql>
+        <rollback>
+            DELETE FROM digitaltwinapp.transaction_schemas
+            WHERE trans_code IN (20026, 10027, 50005, 40003, 50003, 40005, 50002, 40002, 50006, 40006, 50004, 40004);
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

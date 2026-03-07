@@ -59,6 +59,7 @@ function CurrencyIcon({ currency, symbol, logoUrl }: { currency: string, symbol:
 interface MiniCoreTx {
   transaction_id: number;
   transaction_description: string;
+  summary?: string;   // resolved i18n summary from transaction_metadata; absent for codes without metadata
   amount: number;
   direction: 'CREDIT' | 'DEBIT';
   status: string;
@@ -66,13 +67,14 @@ interface MiniCoreTx {
   created_at: string;
 }
 
-function Dashboard({ user, onLogout, timezone }: { user: { name: string; picture: string }, onLogout: () => void, timezone: string }) {
+function Dashboard({ user, onLogout, timezone, lang }: { user: { name: string; picture: string }, onLogout: () => void, timezone: string, lang: string }) {
   const { wallets, refreshWallets } = useStore();
   const [selectedWallet, setSelectedWallet] = useState<WalletType | null>(null);
   const [actionType, setActionType] = useState<'send' | 'receive' | 'buy' | 'sell' | 'convert' | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [txs, setTxs] = useState<MiniCoreTx[]>([]);
   const [txsCapped, setTxsCapped] = useState(false);
+  const [selectedTx, setSelectedTx] = useState<MiniCoreTx | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -115,14 +117,14 @@ function Dashboard({ user, onLogout, timezone }: { user: { name: string; picture
   const activeWallet = wallets[currentIndex];
 
   const fetchTxs = useCallback((currency: string) => {
-    fetch(`${import.meta.env.BASE_URL}api/wallets/transactions?currencyCode=${currency}`, { credentials: 'include' })
+    fetch(`${import.meta.env.BASE_URL}api/wallets/transactions?currencyCode=${currency}&lang=${lang}`, { credentials: 'include' })
       .then(r => { if (!r.ok) throw new Error(); return r.json(); })
       .then((data: MiniCoreTx[]) => {
         setTxs(data);
         setTxsCapped(data.length === 50);
       })
       .catch(() => {});
-  }, []);
+  }, [lang]);
 
   useEffect(() => {
     if (!activeWallet) return;
@@ -297,13 +299,13 @@ function Dashboard({ user, onLogout, timezone }: { user: { name: string; picture
             {txs.map(tx => {
               const isCredit = tx.direction === 'CREDIT';
               return (
-                <div key={tx.transaction_id} className="bg-matera-card rounded-xl p-2 border border-white/5 flex justify-between items-center hover:border-white/10 transition-colors">
+                <div key={tx.transaction_id} onClick={() => setSelectedTx(tx)} className="bg-matera-card rounded-xl p-2 border border-white/5 flex justify-between items-center hover:border-white/10 hover:bg-white/5 transition-colors cursor-pointer">
                   <div className="flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isCredit ? 'bg-matera-green/10 text-matera-green' : 'bg-white/5 text-white'}`}>
                       {isCredit ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
                     </div>
                     <div>
-                      <p className="text-white font-medium">{tx.transaction_description}</p>
+                      <p className="text-white font-medium">{tx.summary ?? tx.transaction_description}</p>
                       <p className="text-xs text-matera-muted">{new Date(tx.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: timezone })}</p>
                     </div>
                   </div>
@@ -346,6 +348,10 @@ function Dashboard({ user, onLogout, timezone }: { user: { name: string; picture
       )}
       {selectedWallet && actionType === 'convert' && (
         <ConvertModal wallet={selectedWallet} onClose={() => { setSelectedWallet(null); setActionType(null); }} />
+      )}
+
+      {selectedTx && (
+        <TransactionDetailModal tx={selectedTx} lang={lang} timezone={timezone} onClose={() => setSelectedTx(null)} />
       )}
     </div>
   );
@@ -1316,7 +1322,97 @@ const TIMEZONES = [
   ]},
 ];
 
-function SettingsModal({ timezone, onTimezoneChange, onClose }: { timezone: string; onTimezoneChange: (tz: string) => void; onClose: () => void }) {
+interface ResolvedField { label: string; value: string; }
+interface ResolvedDisplay { summary: string; fields: ResolvedField[]; }
+
+function TransactionDetailModal({ tx, lang, timezone, onClose }: { tx: MiniCoreTx; lang: string; timezone: string; onClose: () => void }) {
+  const [detail, setDetail] = useState<ResolvedDisplay | null>(null);
+  const [loading, setLoading] = useState(true);
+  const isCredit = tx.direction === 'CREDIT';
+
+  useEffect(() => {
+    fetch(`${import.meta.env.BASE_URL}api/wallets/transactions/${tx.transaction_id}?lang=${lang}`, { credentials: 'include' })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((data: ResolvedDisplay) => setDetail(data))
+      .catch(() => setDetail(null))
+      .finally(() => setLoading(false));
+  }, [tx.transaction_id, lang]);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-matera-card w-full max-w-md rounded-3xl border border-white/10 shadow-2xl animate-in slide-in-from-bottom-8 md:slide-in-from-bottom-0 md:zoom-in-95" onClick={e => e.stopPropagation()}>
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold text-white">Transaction Detail</h3>
+            <button onClick={onClose} className="text-matera-muted hover:text-white p-1 transition-colors"><X size={24} /></button>
+          </div>
+
+          {/* Direction icon + summary */}
+          <div className="flex items-center gap-4 mb-6">
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${isCredit ? 'bg-matera-green/10 text-matera-green' : 'bg-white/5 text-white'}`}>
+              {isCredit ? <ArrowDownLeft size={22} /> : <ArrowUpRight size={22} />}
+            </div>
+            <div>
+              <p className="text-white font-semibold text-base leading-snug">
+                {loading ? 'Loading…' : (detail?.summary ?? tx.summary ?? tx.transaction_description)}
+              </p>
+              <p className="text-xs text-matera-muted mt-0.5">
+                {new Date(tx.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: timezone })}
+              </p>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-white/5 mb-4" />
+
+          {/* Metadata fields */}
+          <div className="space-y-3">
+            {loading ? (
+              <div className="flex justify-center py-4">
+                <div className="w-5 h-5 border-2 border-matera-green border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : detail?.fields && detail.fields.length > 0 ? (
+              detail.fields.map((f, i) => (
+                <div key={i} className="flex justify-between items-start gap-4">
+                  <span className="text-sm text-matera-muted flex-shrink-0">{f.label}</span>
+                  <span className="text-sm text-white text-right break-all">{f.value}</span>
+                </div>
+              ))
+            ) : (
+              /* Fallback: show basic ledger fields when no metadata exists */
+              <>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-matera-muted">Description</span>
+                  <span className="text-sm text-white">{tx.transaction_description}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-matera-muted">Status</span>
+                  <span className="text-sm text-white capitalize">{tx.status.toLowerCase()}</span>
+                </div>
+              </>
+            )}
+
+            {/* Always-shown ledger fields */}
+            <div className="border-t border-white/5 pt-3 mt-3 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-matera-muted">Amount</span>
+                <span className={`text-sm font-semibold ${isCredit ? 'text-matera-green' : 'text-red-400'}`}>
+                  {isCredit ? '+' : '-'}{tx.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-matera-muted">Transaction ID</span>
+                <span className="text-sm text-matera-muted font-mono">#{tx.transaction_id}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsModal({ timezone, onTimezoneChange, lang, onLangChange, onClose }: { timezone: string; onTimezoneChange: (tz: string) => void; lang: string; onLangChange: (l: string) => void; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-matera-card rounded-3xl p-6 w-full max-w-sm border border-white/10 shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -1331,10 +1427,14 @@ function SettingsModal({ timezone, onTimezoneChange, onClose }: { timezone: stri
             <Globe size={16} className="text-matera-green" />
             <p className="text-sm font-semibold text-matera-text">Language</p>
           </div>
-          <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 border border-white/10">
-            <span className="text-white text-sm">English</span>
-            <span className="text-xs text-matera-muted">Only option</span>
-          </div>
+          <select
+            value={lang}
+            onChange={e => onLangChange(e.target.value)}
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-matera-green/50 appearance-none cursor-pointer"
+          >
+            <option value="en" className="bg-matera-card">English</option>
+            <option value="pt-BR" className="bg-matera-card">Português (Brasil)</option>
+          </select>
         </div>
 
         {/* Timezone */}
@@ -1461,10 +1561,16 @@ export default function App() {
   const [showScanner, setShowScanner] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [timezone, setTimezone] = useState<string>(() => localStorage.getItem('dt_timezone') ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [lang, setLang] = useState<string>(() => localStorage.getItem('dt_lang') ?? 'en');
 
   const handleTimezoneChange = useCallback((tz: string) => {
     setTimezone(tz);
     localStorage.setItem('dt_timezone', tz);
+  }, []);
+
+  const handleLangChange = useCallback((l: string) => {
+    setLang(l);
+    localStorage.setItem('dt_lang', l);
   }, []);
 
   useEffect(() => {
@@ -1492,10 +1598,10 @@ export default function App() {
     <StoreProvider>
       <div className="min-h-screen bg-matera-bg pb-20 md:pb-0 md:pl-64 animate-in fade-in duration-500">
         <Sidebar user={user} onLogout={handleLogout} onSettingsPress={() => setShowSettings(true)} />
-        <Dashboard user={user} onLogout={handleLogout} timezone={timezone} />
+        <Dashboard user={user} onLogout={handleLogout} timezone={timezone} lang={lang} />
         <BottomNav onScanPress={() => setShowScanner(true)} onSettingsPress={() => setShowSettings(true)} />
         {showScanner && <QRScannerModal onClose={() => setShowScanner(false)} />}
-        {showSettings && <SettingsModal timezone={timezone} onTimezoneChange={handleTimezoneChange} onClose={() => setShowSettings(false)} />}
+        {showSettings && <SettingsModal timezone={timezone} onTimezoneChange={handleTimezoneChange} lang={lang} onLangChange={handleLangChange} onClose={() => setShowSettings(false)} />}
       </div>
     </StoreProvider>
   );

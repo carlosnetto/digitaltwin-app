@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="019-create-transaction-metadata" author="digitaltwinapp-api">
+        <sql splitStatements="true">
+            CREATE TABLE digitaltwinapp.transaction_metadata (
+                id             UUID         NOT NULL,
+                trans_code     INTEGER      NOT NULL,
+                ledger_id      VARCHAR(64)  NULL,
+                ledger_uuid    UUID         NULL,
+                schema_version INTEGER      NOT NULL DEFAULT 1,
+                metadata       JSONB        NOT NULL,
+                created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+                CONSTRAINT transaction_metadata_pkey         PRIMARY KEY (id),
+                CONSTRAINT transaction_metadata_code_fk      FOREIGN KEY (trans_code)
+                    REFERENCES digitaltwinapp.transaction_codes(code),
+                CONSTRAINT transaction_metadata_ledger_check CHECK (
+                    (ledger_id IS NOT NULL AND ledger_uuid IS NULL) OR
+                    (ledger_id IS NULL     AND ledger_uuid IS NOT NULL)
+                )
+            );
+
+            -- Unique partial indexes: one metadata row per ledger transaction.
+            -- Partial (WHERE NOT NULL) so the unused column does not consume index space.
+            CREATE UNIQUE INDEX transaction_metadata_ledger_id_idx
+                ON digitaltwinapp.transaction_metadata (ledger_id)
+                WHERE ledger_id IS NOT NULL;
+
+            CREATE UNIQUE INDEX transaction_metadata_ledger_uuid_idx
+                ON digitaltwinapp.transaction_metadata (ledger_uuid)
+                WHERE ledger_uuid IS NOT NULL;
+
+            -- Secondary index for "all transactions of type X with metadata" queries.
+            CREATE INDEX transaction_metadata_trans_code_idx
+                ON digitaltwinapp.transaction_metadata (trans_code);
+        </sql>
+        <rollback>
+            DROP TABLE IF EXISTS digitaltwinapp.transaction_metadata;
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

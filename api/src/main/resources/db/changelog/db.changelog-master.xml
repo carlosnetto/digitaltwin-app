@@ -18,5 +18,12 @@
     <include file="db/changelog/011-create-conversions.xml"/>
     <include file="db/changelog/012-create-p2p-transactions.xml"/>
     <include file="db/changelog/013-simplify-p2p-transactions.xml"/>
+    <include file="db/changelog/014-create-transaction-codes.xml"/>
+    <include file="db/changelog/015-create-transaction-schemas.xml"/>
+    <include file="db/changelog/016-create-transaction-schema-i18n.xml"/>
+    <include file="db/changelog/017-add-external-wallet-codes.xml"/>
+    <include file="db/changelog/018-seed-transaction-schemas.xml"/>
+    <include file="db/changelog/019-create-transaction-metadata.xml"/>
+    <include file="db/changelog/020-add-schema-version-to-metadata-blobs.xml"/>
 
 </databaseChangeLog>

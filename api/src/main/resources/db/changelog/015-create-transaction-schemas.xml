@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="015-create-transaction-schemas" author="digitaltwinapp-api">
+        <sql splitStatements="true">
+            CREATE TABLE digitaltwinapp.transaction_schemas (
+                trans_code  INTEGER NOT NULL,
+                json_schema JSONB   NOT NULL,
+                CONSTRAINT transaction_schemas_pkey PRIMARY KEY (trans_code),
+                CONSTRAINT transaction_schemas_fk   FOREIGN KEY (trans_code)
+                    REFERENCES digitaltwinapp.transaction_codes(code)
+            );
+
+            -- No rows seeded here. JSON schemas are populated separately per transaction
+            -- code as metadata requirements are defined. A missing row means no validation
+            -- is enforced for that code (pass-through). The SchemaRegistryService
+            -- pre-compiles all rows into memory at startup.
+        </sql>
+        <rollback>
+            DROP TABLE IF EXISTS digitaltwinapp.transaction_schemas;
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

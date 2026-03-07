@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="020-add-schema-version-to-metadata-blobs" author="digitaltwinapp-api">
+        <sql splitStatements="false">
+            -- Add schema_version as a required field to every JSON Schema in
+            -- transaction_schemas.
+            --
+            -- Rationale: every metadata blob stored in transaction_metadata starts with
+            -- { "schema_version": 1, ... } so the payload is self-contained. If the blob
+            -- is forwarded to an external ledger, exported to a data lake, or retrieved
+            -- a decade from now, the reader knows exactly which schema and display
+            -- templates apply without any dependency on our internal tables.
+            --
+            -- jsonb_set(target, path, new_value) is non-destructive for the other keys:
+            -- the outer call adds the property definition, the inner call appends the field
+            -- name to the existing required array.
+
+            UPDATE digitaltwinapp.transaction_schemas
+            SET json_schema = jsonb_set(
+                jsonb_set(
+                    json_schema,
+                    '{properties,schema_version}',
+                    '{"type": "integer", "minimum": 1}'::jsonb
+                ),
+                '{required}',
+                (json_schema -> 'required') || '["schema_version"]'::jsonb
+            )
+            WHERE trans_code IN (
+                20026, 10027,
+                50005, 40003,
+                50003, 40005,
+                50002, 40002,
+                50006, 40006,
+                50004, 40004
+            )
+        </sql>
+        <rollback>
+            -- Remove schema_version from properties and required array on each schema.
+            UPDATE digitaltwinapp.transaction_schemas
+            SET json_schema = jsonb_set(
+                jsonb_set(
+                    json_schema,
+                    '{required}',
+                    (
+                        SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)
+                        FROM jsonb_array_elements(json_schema -> 'required') AS elem
+                        WHERE elem::text != '"schema_version"'
+                    )
+                ),
+                '{properties}',
+                (json_schema -> 'properties') - 'schema_version'
+            )
+            WHERE trans_code IN (
+                20026, 10027,
+                50005, 40003,
+                50003, 40005,
+                50002, 40002,
+                50006, 40006,
+                50004, 40004
+            )
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

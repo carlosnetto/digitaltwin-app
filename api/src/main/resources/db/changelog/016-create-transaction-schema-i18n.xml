@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.27.xsd">
+
+    <changeSet id="016-create-transaction-schema-i18n" author="digitaltwinapp-api">
+        <sql splitStatements="true">
+            CREATE TABLE digitaltwinapp.transaction_schema_i18n (
+                trans_code    INTEGER     NOT NULL,
+                lang          VARCHAR(10) NOT NULL,
+                summary_data  TEXT        NOT NULL,
+                detailed_data JSONB       NOT NULL,
+                CONSTRAINT transaction_schema_i18n_pkey PRIMARY KEY (trans_code, lang),
+                CONSTRAINT transaction_schema_i18n_fk   FOREIGN KEY (trans_code)
+                    REFERENCES digitaltwinapp.transaction_codes(code)
+            );
+
+            -- summary_data : single template string shown on the transaction list row.
+            -- detailed_data: JSON array of {"label": "...", "value": "..."} objects shown
+            --                on the transaction detail screen. The UI maps over this array
+            --                and renders each entry independently (label muted, value primary).
+            -- ${paths}     : resolved at runtime against the transaction_metadata JSONB
+            --                for that specific transaction. Language-agnostic — only the
+            --                surrounding text changes per locale.
+            --
+            -- Codes seeded here are those that carry meaningful extra metadata beyond what
+            -- the ledger already stores (amount, date, description).
+            -- Codes without rows fall back to displaying the raw ledger description.
+
+            -- ── P2P Sent (20026) ──────────────────────────────────────────────────────
+
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                20026, 'en',
+                'Sent ${amount} ${currency} to ${recipient_name}',
+                '[{"label":"Recipient","value":"${recipient_name}"},{"label":"Email","value":"${recipient_email}"},{"label":"Amount","value":"${amount} ${currency}"}]'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                20026, 'pt-BR',
+                'Enviou ${amount} ${currency} para ${recipient_name}',
+                '[{"label":"Destinatário","value":"${recipient_name}"},{"label":"E-mail","value":"${recipient_email}"},{"label":"Valor","value":"${amount} ${currency}"}]'::jsonb
+            );
+
+            -- ── P2P Received (10027) ──────────────────────────────────────────────────
+
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                10027, 'en',
+                'Received ${amount} ${currency} from ${sender_name}',
+                '[{"label":"From","value":"${sender_name}"},{"label":"Email","value":"${sender_email}"},{"label":"Amount","value":"${amount} ${currency}"}]'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                10027, 'pt-BR',
+                'Recebeu ${amount} ${currency} de ${sender_name}',
+                '[{"label":"De","value":"${sender_name}"},{"label":"E-mail","value":"${sender_email}"},{"label":"Valor","value":"${amount} ${currency}"}]'::jsonb
+            );
+
+            -- ── Buy: fiat debit side (50005) ──────────────────────────────────────────
+            -- Shown on the fiat wallet (e.g. USD): "you paid X USD for Y USDC"
+
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                50005, 'en',
+                'Purchased ${to_amount} ${to_currency} for ${from_amount} ${from_currency}',
+                '[{"label":"Paid","value":"${from_amount} ${from_currency}"},{"label":"Received","value":"${to_amount} ${to_currency}"},{"label":"Rate","value":"1 ${to_currency} = ${rate} ${from_currency}"}]'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                50005, 'pt-BR',
+                'Comprou ${to_amount} ${to_currency} por ${from_amount} ${from_currency}',
+                '[{"label":"Pago","value":"${from_amount} ${from_currency}"},{"label":"Recebido","value":"${to_amount} ${to_currency}"},{"label":"Taxa","value":"1 ${to_currency} = ${rate} ${from_currency}"}]'::jsonb
+            );
+
+            -- ── Buy: crypto credit side (40003) ───────────────────────────────────────
+            -- Shown on the crypto wallet (e.g. USDC): "you received Y USDC"
+
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                40003, 'en',
+                'Purchased ${to_amount} ${to_currency}',
+                '[{"label":"Received","value":"${to_amount} ${to_currency}"},{"label":"Paid","value":"${from_amount} ${from_currency}"},{"label":"Rate","value":"1 ${to_currency} = ${rate} ${from_currency}"}]'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                40003, 'pt-BR',
+                'Comprou ${to_amount} ${to_currency}',
+                '[{"label":"Recebido","value":"${to_amount} ${to_currency}"},{"label":"Pago","value":"${from_amount} ${from_currency}"},{"label":"Taxa","value":"1 ${to_currency} = ${rate} ${from_currency}"}]'::jsonb
+            );
+
+            -- ── Sell: crypto debit side (50003) ───────────────────────────────────────
+            -- Shown on the crypto wallet (e.g. USDC): "you sold X USDC"
+
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                50003, 'en',
+                'Sold ${from_amount} ${from_currency} for ${to_amount} ${to_currency}',
+                '[{"label":"Sold","value":"${from_amount} ${from_currency}"},{"label":"Received","value":"${to_amount} ${to_currency}"},{"label":"Rate","value":"1 ${from_currency} = ${rate} ${to_currency}"}]'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                50003, 'pt-BR',
+                'Vendeu ${from_amount} ${from_currency} por ${to_amount} ${to_currency}',
+                '[{"label":"Vendido","value":"${from_amount} ${from_currency}"},{"label":"Recebido","value":"${to_amount} ${to_currency}"},{"label":"Taxa","value":"1 ${from_currency} = ${rate} ${to_currency}"}]'::jsonb
+            );
+
+            -- ── Sell: fiat credit side (40005) ────────────────────────────────────────
+            -- Shown on the fiat wallet (e.g. USD): "you received Y USD from selling USDC"
+
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                40005, 'en',
+                'Sold ${from_amount} ${from_currency}',
+                '[{"label":"Received","value":"${to_amount} ${to_currency}"},{"label":"Sold","value":"${from_amount} ${from_currency}"},{"label":"Rate","value":"1 ${from_currency} = ${rate} ${to_currency}"}]'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                40005, 'pt-BR',
+                'Vendeu ${from_amount} ${from_currency}',
+                '[{"label":"Recebido","value":"${to_amount} ${to_currency}"},{"label":"Vendido","value":"${from_amount} ${from_currency}"},{"label":"Taxa","value":"1 ${from_currency} = ${rate} ${to_currency}"}]'::jsonb
+            );
+
+            -- ── Crypto-to-crypto convert: debit side (50002) ─────────────────────────
+
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                50002, 'en',
+                'Converted ${from_amount} ${from_currency} to ${to_currency}',
+                '[{"label":"Sent","value":"${from_amount} ${from_currency}"},{"label":"Received","value":"${to_amount} ${to_currency}"},{"label":"Rate","value":"1 ${from_currency} = ${rate} ${to_currency}"}]'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                50002, 'pt-BR',
+                'Converteu ${from_amount} ${from_currency} para ${to_currency}',
+                '[{"label":"Enviado","value":"${from_amount} ${from_currency}"},{"label":"Recebido","value":"${to_amount} ${to_currency}"},{"label":"Taxa","value":"1 ${from_currency} = ${rate} ${to_currency}"}]'::jsonb
+            );
+
+            -- ── Crypto-to-crypto convert: credit side (40002) ────────────────────────
+
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                40002, 'en',
+                'Converted ${from_currency} to ${to_amount} ${to_currency}',
+                '[{"label":"Received","value":"${to_amount} ${to_currency}"},{"label":"Sent","value":"${from_amount} ${from_currency}"},{"label":"Rate","value":"1 ${from_currency} = ${rate} ${to_currency}"}]'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                40002, 'pt-BR',
+                'Converteu ${from_currency} para ${to_amount} ${to_currency}',
+                '[{"label":"Recebido","value":"${to_amount} ${to_currency}"},{"label":"Enviado","value":"${from_amount} ${from_currency}"},{"label":"Taxa","value":"1 ${from_currency} = ${rate} ${to_currency}"}]'::jsonb
+            );
+
+            -- ── Fiat-to-fiat convert: debit side (50006) ─────────────────────────────
+
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                50006, 'en',
+                'Converted ${from_amount} ${from_currency} to ${to_currency}',
+                '[{"label":"Sent","value":"${from_amount} ${from_currency}"},{"label":"Received","value":"${to_amount} ${to_currency}"},{"label":"Rate","value":"1 ${from_currency} = ${rate} ${to_currency}"}]'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                50006, 'pt-BR',
+                'Converteu ${from_amount} ${from_currency} para ${to_currency}',
+                '[{"label":"Enviado","value":"${from_amount} ${from_currency}"},{"label":"Recebido","value":"${to_amount} ${to_currency}"},{"label":"Taxa","value":"1 ${from_currency} = ${rate} ${to_currency}"}]'::jsonb
+            );
+
+            -- ── Fiat-to-fiat convert: credit side (40006) ────────────────────────────
+
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                40006, 'en',
+                'Converted ${from_currency} to ${to_amount} ${to_currency}',
+                '[{"label":"Received","value":"${to_amount} ${to_currency}"},{"label":"Sent","value":"${from_amount} ${from_currency}"},{"label":"Rate","value":"1 ${from_currency} = ${rate} ${to_currency}"}]'::jsonb
+            );
+            INSERT INTO digitaltwinapp.transaction_schema_i18n VALUES (
+                40006, 'pt-BR',
+                'Converteu ${from_currency} para ${to_amount} ${to_currency}',
+                '[{"label":"Recebido","value":"${to_amount} ${to_currency}"},{"label":"Enviado","value":"${from_amount} ${from_currency}"},{"label":"Taxa","value":"1 ${from_currency} = ${rate} ${to_currency}"}]'::jsonb
+            );
+        </sql>
+        <rollback>
+            DROP TABLE IF EXISTS digitaltwinapp.transaction_schema_i18n;
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

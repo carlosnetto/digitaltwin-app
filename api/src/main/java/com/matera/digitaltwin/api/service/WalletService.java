@@ -1,5 +1,7 @@
 package com.matera.digitaltwin.api.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.matera.digitaltwin.api.client.MiniCoreClient;
 import com.matera.digitaltwin.api.model.WalletDto;
 import org.slf4j.Logger;
@@ -9,8 +11,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Returns the logged-in user's wallets with live balances from mini-core.
@@ -18,14 +26,26 @@ import java.util.Map;
 @Service
 public class WalletService {
 
-    private static final Logger log = LoggerFactory.getLogger(WalletService.class);
+    private static final Logger   log       = LoggerFactory.getLogger(WalletService.class);
+    private static final Duration CACHE_TTL = Duration.ofMinutes(5);
 
-    private final JdbcTemplate jdbc;
-    private final MiniCoreClient miniCoreClient;
+    private final JdbcTemplate               jdbc;
+    private final MiniCoreClient             miniCoreClient;
+    private final TransactionDisplayService  displayService;
+    private final ObjectMapper               objectMapper;
 
-    public WalletService(JdbcTemplate jdbc, MiniCoreClient miniCoreClient) {
-        this.jdbc = jdbc;
+    // ledger_id → cached metadata entry with rolling TTL
+    private final java.util.concurrent.ConcurrentHashMap<String, CacheEntry> metadataCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    public WalletService(JdbcTemplate jdbc,
+                         MiniCoreClient miniCoreClient,
+                         TransactionDisplayService displayService,
+                         ObjectMapper objectMapper) {
+        this.jdbc           = jdbc;
         this.miniCoreClient = miniCoreClient;
+        this.displayService = displayService;
+        this.objectMapper   = objectMapper;
     }
 
     public List<WalletDto> getWalletsForUser(String email) {
@@ -57,7 +77,17 @@ public class WalletService {
         return rows.stream().map(this::toDto).toList();
     }
 
-    public List<Map<String, Object>> getTransactions(String email, String currencyCode) {
+    /**
+     * Returns up to 50 recent transactions for the user's account in the given currency,
+     * enriched with a resolved i18n summary string wherever transaction_metadata exists.
+     *
+     * The metadata lookup is a single batch query (WHERE ledger_id IN (...)) so latency
+     * does not grow with the number of transactions.
+     *
+     * @param lang BCP-47 language tag (e.g. "en", "pt-BR"); falls back to "en" if no
+     *             template exists for the requested language.
+     */
+    public List<Map<String, Object>> getTransactions(String email, String currencyCode, String lang) {
         Long userId;
         try {
             userId = jdbc.queryForObject(
@@ -79,24 +109,79 @@ public class WalletService {
         }
         if (minicoreAccountId == null) return List.of();
 
-        List<Map<String, Object>> txs = miniCoreClient.getTransactions(minicoreAccountId);
-
-        // Sort by transaction_id descending (most recent first), then cap at 50
-        List<Map<String, Object>> sorted = txs.stream()
-                .sorted(java.util.Comparator.comparingLong(
-                        tx -> -((Number) tx.get("transaction_id")).longValue()))
+        // ── Fetch and cap ─────────────────────────────────────────────────────
+        List<Map<String, Object>> capped = miniCoreClient.getTransactions(minicoreAccountId).stream()
+                .sorted(Comparator.comparingLong(tx -> -((Number) tx.get("transaction_id")).longValue()))
+                .limit(50)
                 .toList();
-        List<Map<String, Object>> capped = sorted.size() > 50 ? sorted.subList(0, 50) : sorted;
 
-        // Format description: "DIRECT DEPOSIT - PAYROLL" → "Direct deposit - payroll"
+        // ── Batch-fetch summaries for all IDs in one query ────────────────────
+        Map<String, String> summaryByLedgerId = fetchSummaries(capped, lang);
+
+        // ── Build the response: format description + attach summary ───────────
         return capped.stream().map(tx -> {
+            Map<String, Object> copy = new HashMap<>(tx);
+
             String raw = (String) tx.get("transaction_description");
-            if (raw == null || raw.isEmpty()) return tx;
-            String formatted = Character.toUpperCase(raw.charAt(0)) + raw.substring(1).toLowerCase();
-            Map<String, Object> copy = new java.util.HashMap<>(tx);
-            copy.put("transaction_description", formatted);
-            return copy;
+            if (raw != null && !raw.isEmpty()) {
+                copy.put("transaction_description",
+                        Character.toUpperCase(raw.charAt(0)) + raw.substring(1).toLowerCase());
+            }
+
+            String ledgerId = String.valueOf(((Number) tx.get("transaction_id")).longValue());
+            String summary = summaryByLedgerId.get(ledgerId);
+            if (summary != null) {
+                copy.put("summary", summary);
+            }
+
+            return (Map<String, Object>) copy;
         }).toList();
+    }
+
+    /**
+     * Returns the full resolved display (summary + labeled fields) for a single transaction.
+     * Intended for the tap-to-detail use case — one SQL query at most.
+     *
+     * If the transaction was already fetched as part of a recent list call it will be in the
+     * shared metadata cache and no DB round-trip is needed at all. This means a user who
+     * scrolls the list and then taps a row typically gets the detail with zero extra queries.
+     *
+     * @param ledgerId mini-core transaction_id as a string
+     * @param lang     BCP-47 language tag
+     * @return resolved display, or Optional.empty() if no metadata row exists for this transaction
+     */
+    public Optional<TransactionDisplayService.ResolvedDisplay> getTransactionDetail(String ledgerId, String lang) {
+        // ── Cache hit ─────────────────────────────────────────────────────────
+        CacheEntry cached = metadataCache.get(ledgerId);
+        if (cached != null && !cached.isExpired()) {
+            return displayService.resolve(cached.transCode(), lang, cached.metadata());
+        }
+
+        // ── Cache miss — single DB fetch ──────────────────────────────────────
+        Map<String, Object> row;
+        try {
+            row = jdbc.queryForMap("""
+                    SELECT trans_code, metadata::text AS metadata
+                    FROM digitaltwinapp.transaction_metadata
+                    WHERE ledger_id = ?
+                    """, ledgerId);
+        } catch (EmptyResultDataAccessException e) {
+            return Optional.empty();   // no metadata — caller shows raw ledger data
+        } catch (Exception e) {
+            log.warn("getTransactionDetail: query failed for ledger_id={}: {}", ledgerId, e.getMessage());
+            return Optional.empty();
+        }
+
+        try {
+            int transCode = ((Number) row.get("trans_code")).intValue();
+            Map<String, Object> metadata = objectMapper.readValue(
+                    (String) row.get("metadata"), new TypeReference<>() {});
+            metadataCache.put(ledgerId, new CacheEntry(transCode, metadata, Instant.now().plus(CACHE_TTL)));
+            return displayService.resolve(transCode, lang, metadata);
+        } catch (Exception e) {
+            log.warn("getTransactionDetail: resolve failed for ledger_id={}: {}", ledgerId, e.getMessage());
+            return Optional.empty();
+        }
     }
 
     public String lookupUserName(String email) {
@@ -185,6 +270,71 @@ public class WalletService {
                 """, BigDecimal.class, fromCode, toCode);
     }
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Returns a summary string for every transaction in the list.
+     *
+     * Strategy: partition the ledger IDs into cache-hits and cache-misses. Fetch only
+     * the misses in a single IN query, store them in the shared cache, then resolve all
+     * summaries in memory. On a repeat call within the TTL window (e.g. the user slides
+     * back to this wallet) the DB query is skipped entirely.
+     *
+     * Cache entries expire individually after CACHE_TTL. Lazy eviction — expired entries
+     * are overwritten on the next miss cycle, never held in memory forever.
+     */
+    private Map<String, String> fetchSummaries(List<Map<String, Object>> txs, String lang) {
+        if (txs.isEmpty()) return Map.of();
+
+        List<String> ledgerIds = txs.stream()
+                .map(tx -> String.valueOf(((Number) tx.get("transaction_id")).longValue()))
+                .toList();
+
+        // ── Partition: cache hits vs misses ───────────────────────────────────
+        List<String> missing = ledgerIds.stream()
+                .filter(id -> { CacheEntry e = metadataCache.get(id); return e == null || e.isExpired(); })
+                .toList();
+
+        // ── Fetch only missing entries from the DB in a single batch ──────────
+        if (!missing.isEmpty()) {
+            String placeholders = String.join(",", Collections.nCopies(missing.size(), "?"));
+            Instant expiresAt = Instant.now().plus(CACHE_TTL);
+            try {
+                jdbc.queryForList(
+                        "SELECT trans_code, ledger_id, metadata::text AS metadata " +
+                        "FROM digitaltwinapp.transaction_metadata " +
+                        "WHERE ledger_id IN (" + placeholders + ")",
+                        missing.toArray())
+                    .forEach(row -> {
+                        String ledgerId = (String) row.get("ledger_id");
+                        int transCode   = ((Number) row.get("trans_code")).intValue();
+                        try {
+                            Map<String, Object> metadata = objectMapper.readValue(
+                                    (String) row.get("metadata"), new TypeReference<>() {});
+                            metadataCache.put(ledgerId, new CacheEntry(transCode, metadata, expiresAt));
+                        } catch (Exception e) {
+                            log.warn("fetchSummaries: skipping ledger_id={}: {}", ledgerId, e.getMessage());
+                        }
+                    });
+                log.debug("fetchSummaries: cache={} db={} total={}",
+                        ledgerIds.size() - missing.size(), missing.size(), ledgerIds.size());
+            } catch (Exception e) {
+                log.warn("fetchSummaries: DB batch query failed for {} entries: {}", missing.size(), e.getMessage());
+            }
+        }
+
+        // ── Resolve summaries for all IDs from cache (hits + newly fetched) ───
+        Map<String, String> result = new HashMap<>();
+        for (String ledgerId : ledgerIds) {
+            CacheEntry entry = metadataCache.get(ledgerId);
+            if (entry != null && !entry.isExpired()) {
+                displayService.resolve(entry.transCode(), lang, entry.metadata())
+                        .ifPresent(display -> result.put(ledgerId, display.summary()));
+            }
+        }
+        return result;
+    }
+
     private WalletDto toDto(Map<String, Object> row) {
         long minicoreAccountId = ((Number) row.get("minicore_account_id")).longValue();
         double balance = fetchBalance(minicoreAccountId);
@@ -207,5 +357,17 @@ public class WalletService {
         if (account == null) return 0.0;
         Object bal = account.get("available_balance");
         return bal == null ? 0.0 : ((Number) bal).doubleValue();
+    }
+
+    // ── Cache types ───────────────────────────────────────────────────────────
+
+    /**
+     * A single transaction's deserialized metadata, held in memory until the TTL expires.
+     * Storing the raw metadata map (rather than the resolved string) keeps the cache
+     * language-agnostic — summary resolution happens at serve time from the in-memory map
+     * and is O(n) string concatenation with no I/O.
+     */
+    private record CacheEntry(int transCode, Map<String, Object> metadata, Instant expiresAt) {
+        boolean isExpired() { return Instant.now().isAfter(expiresAt); }
     }
 }
