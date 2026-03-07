@@ -4,6 +4,7 @@ import com.lowagie.text.Document;
 import com.lowagie.text.Element;
 import com.lowagie.text.Font;
 import com.lowagie.text.FontFactory;
+import com.lowagie.text.Image;
 import com.lowagie.text.PageSize;
 import com.lowagie.text.Paragraph;
 import com.lowagie.text.Phrase;
@@ -13,12 +14,17 @@ import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfPageEventHelper;
 import com.lowagie.text.pdf.PdfWriter;
 import com.matera.digitaltwin.api.client.MiniCoreClient;
+import org.apache.batik.transcoder.TranscoderInput;
+import org.apache.batik.transcoder.TranscoderOutput;
+import org.apache.batik.transcoder.image.PNGTranscoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.awt.Color;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -136,7 +142,6 @@ public class StatementService {
         doc.open();
 
         // ── Fonts ─────────────────────────────────────────────────────────
-        Font appFont  = FontFactory.getFont(FontFactory.HELVETICA_BOLD,  9, NAVY);
         Font titleFnt = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, NAVY);
         Font labelFnt = FontFactory.getFont(FontFactory.HELVETICA_BOLD,  9, DARK_GRAY);
         Font valueFnt = FontFactory.getFont(FontFactory.HELVETICA,       9, DARK_GRAY);
@@ -144,14 +149,32 @@ public class StatementService {
         Font cellFnt  = FontFactory.getFont(FontFactory.HELVETICA,       8, DARK_GRAY);
         Font totalFnt = FontFactory.getFont(FontFactory.HELVETICA_BOLD,  8, DARK_GRAY);
 
-        // ── App name + title ──────────────────────────────────────────────
-        Paragraph appName = new Paragraph("Digital Twin — Matera", appFont);
-        appName.setAlignment(Element.ALIGN_RIGHT);
-        doc.add(appName);
+        // ── Logo + title (two-column header row) ──────────────────────────
+        PdfPTable header = new PdfPTable(new float[]{60, 40});
+        header.setWidthPercentage(100);
+        header.setSpacingAfter(6);
 
-        Paragraph title = new Paragraph("Account Statement", titleFnt);
-        title.setSpacingBefore(4);
-        doc.add(title);
+        // Left: "Account Statement" title
+        PdfPCell titleCell = new PdfPCell(new Phrase("Account Statement", titleFnt));
+        titleCell.setBorder(Rectangle.NO_BORDER);
+        titleCell.setVerticalAlignment(Element.ALIGN_BOTTOM);
+        titleCell.setPaddingBottom(2);
+        header.addCell(titleCell);
+
+        // Right: Matera logo (SVG transcoded to PNG in-memory)
+        PdfPCell logoCell = new PdfPCell();
+        logoCell.setBorder(Rectangle.NO_BORDER);
+        logoCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        logoCell.setVerticalAlignment(Element.ALIGN_BOTTOM);
+        byte[] logoPng = logoAsPng(20f);
+        if (logoPng != null) {
+            Image logo = Image.getInstance(logoPng);
+            logo.setAlignment(Image.RIGHT);
+            logoCell.addElement(logo);
+        }
+        header.addCell(logoCell);
+
+        doc.add(header);
 
         // ── Info grid ─────────────────────────────────────────────────────
         PdfPTable info = new PdfPTable(2);
@@ -181,13 +204,13 @@ public class StatementService {
         table.setWidthPercentage(100);
         table.setSpacingBefore(10);
 
-        for (String header : new String[]{"Date", "Description", "Debit", "Credit", "Balance"}) {
-            PdfPCell h = new PdfPCell(new Phrase(header, colFnt));
+        for (String col : new String[]{"Date", "Description", "Debit", "Credit", "Balance"}) {
+            PdfPCell h = new PdfPCell(new Phrase(col, colFnt));
             h.setBackgroundColor(NAVY);
             h.setPadding(5);
             h.setBorder(Rectangle.NO_BORDER);
             h.setHorizontalAlignment(
-                    header.equals("Date") || header.equals("Description")
+                    col.equals("Date") || col.equals("Description")
                             ? Element.ALIGN_LEFT : Element.ALIGN_RIGHT);
             table.addCell(h);
         }
@@ -346,6 +369,32 @@ public class StatementService {
     private static String capitalize(String s) {
         if (s == null || s.isEmpty()) return "";
         return Character.toUpperCase(s.charAt(0)) + s.substring(1).toLowerCase();
+    }
+
+    // ── Logo transcoding ───────────────────────────────────────────────────
+
+    /**
+     * Transcodes the classpath SVG logo to a PNG byte array at the requested height.
+     * Batik renders the SVG paths entirely in-memory — no files, no network calls.
+     *
+     * @param heightPt desired rendered height in points (width scales proportionally from viewBox)
+     * @return PNG bytes ready for {@link Image#getInstance(byte[])}, or {@code null} on failure
+     */
+    private byte[] logoAsPng(float heightPt) {
+        try (InputStream svgStream = getClass().getResourceAsStream("/matera-logo.svg")) {
+            if (svgStream == null) {
+                log.warn("logoAsPng: matera-logo.svg not found on classpath");
+                return null;
+            }
+            PNGTranscoder transcoder = new PNGTranscoder();
+            transcoder.addTranscodingHint(PNGTranscoder.KEY_HEIGHT, heightPt);
+            ByteArrayOutputStream pngOut = new ByteArrayOutputStream();
+            transcoder.transcode(new TranscoderInput(svgStream), new TranscoderOutput(pngOut));
+            return pngOut.toByteArray();
+        } catch (Exception e) {
+            log.warn("logoAsPng: transcoding failed: {}", e.getMessage());
+            return null;
+        }
     }
 
     // ── Page numbers ───────────────────────────────────────────────────────
