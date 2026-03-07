@@ -31,7 +31,7 @@ api/
   src/main/java/.../
     client/MiniCoreClient.java       # getAccount, createAccount, createTransaction → localhost:5001
     controller/AuthController.java   # POST /api/auth/google, GET /api/auth/me, POST /api/auth/logout
-    controller/WalletController.java # GET /api/wallets, transactions, rate, convert, p2p; GET /api/users/lookup
+    controller/WalletController.java # GET /api/wallets, transactions, rate, convert, p2p, statement (PDF+XLSX); GET /api/users/lookup
     listener/PostgresNotificationListener.java  # pg_notify daemon → provisions accounts on new user
     model/                           # UserInfo, WalletDto, ConversionRequest, ConversionResultDto, P2pRequest
     service/GoogleAuthService.java   # token → userinfo → domain check → DB check; auto-inserts new users
@@ -39,6 +39,8 @@ api/
     service/UserAccountProvisioningService.java # creates mini-core accounts + 10k BRL welcome credit; 60s catch-all @Scheduled
     service/ExchangeRateService.java # @Scheduled every 10min from open.er-api.com
     service/ConversionService.java   # 4 mini-core transactions + conversions table record
+    service/StatementService.java    # PDF statement via OpenPDF 1.3.30 — streamed directly to OutputStream, no temp file
+    service/ExcelStatementService.java # XLSX statement via Apache POI 5.3.0 — streamed directly to OutputStream, no temp file
     service/SchemaRegistryService.java          # pre-compiled networknt JSON schemas loaded at @PostConstruct; volatile swap
     service/TransactionDisplayService.java      # i18n template cache; en eager-loaded, others lazy; ${path} placeholder resolution
     service/TransactionMetadataBackfillService.java  # ApplicationRunner; backfills transaction_metadata for historical txs
@@ -68,6 +70,7 @@ api/
     application.yml                  # port 8081, Liquibase, CORS (includes https://materalabs.us)
     application-local.yml            # gitignored — DB credentials
     application-local.yml.example    # template for new devs
+    matera-logo-statement.png        # black Matera logo used in PDF statements (loaded from classpath)
   TRANSACTION-METADATA.md  # full system doc: DB tables, schemas, i18n, caching layers, API, backfill, versioning
   JAVA.md                  # Java coding conventions for this project
   SPRING.md                # Spring Boot conventions for this project
@@ -227,6 +230,25 @@ Keys: `dt_lang` (BCP-47, e.g. `'en'`, `'pt-BR'`), `dt_timezone` (IANA, e.g. `'Am
 `lang` is passed down to `Dashboard` and included as `&lang=` on all transaction API calls.
 User changes it via the language `<select>` in `SettingsModal`.
 
+### Account Statement Generation
+
+Two services stream statements directly to `HttpServletResponse.getOutputStream()` — no temp files at any point.
+
+**PDF** (`StatementService`, OpenPDF 1.3.30):
+- `Content-Disposition: inline` → browser/mobile OS opens native PDF viewer
+- Frontend: `blob()` → `URL.createObjectURL(blob)` → `window.open(url, '_blank')`
+- Logo loaded from classpath: `getClass().getResourceAsStream("/matera-logo-statement.png")`
+- Uses `java.awt.Color` — **not** `BaseColor` (removed in OpenPDF 1.3.30)
+
+**Excel** (`ExcelStatementService`, Apache POI 5.3.0 `poi-ooxml`):
+- `Content-Disposition: attachment` → browser triggers OS download handler
+- Frontend: `blob()` → `URL.createObjectURL(blob)` → hidden `<a download>` click
+- No logo in XLSX (embedded picture APIs in POI produce unreliable sizing results)
+
+Both services share the same data pipeline: `resolveAccount` (DB query) → `miniCoreClient.getTransactions()` → filter by `effective_date` range → `fetchSummaries` (batch metadata query → i18n resolve) → format output.
+
+**`StatementModal`** (frontend): period selector (last 15/30/90 days or custom date range) + PDF/Excel format toggle. The Generate button label and header icon update to match the selected format.
+
 ### PROTOTYPE Watermark
 
 `ReceiveModal` (and any other modal showing placeholder UI) uses an absolute overlay:
@@ -298,6 +320,8 @@ Wallet balances are live — fetched from mini-core on every page load and after
 | `POST` | `/api/wallets/convert` | Buy / sell / convert (4 mini-core txs) |
 | `POST` | `/api/wallets/p2p` | P2P transfer to another platform user |
 | `GET` | `/api/users/lookup?email=X` | Resolve email → name (P2P confirmation step) |
+| `GET` | `/api/wallets/statement?currencyCode=X&from=Y&to=Z&lang=en` | Stream PDF statement (`Content-Disposition: inline`) |
+| `GET` | `/api/wallets/statement/xlsx?currencyCode=X&from=Y&to=Z&lang=en` | Stream XLSX statement (`Content-Disposition: attachment`) |
 
 `lang` defaults to `"en"`. Currently seeded languages: `en`, `pt-BR`. Falls back to `en` if the requested language has no templates for a given transaction code.
 

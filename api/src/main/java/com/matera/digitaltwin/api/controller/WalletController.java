@@ -6,6 +6,7 @@ import com.matera.digitaltwin.api.model.ConversionResultDto;
 import com.matera.digitaltwin.api.model.UserInfo;
 import com.matera.digitaltwin.api.model.WalletDto;
 import com.matera.digitaltwin.api.service.ConversionService;
+import com.matera.digitaltwin.api.service.ExcelStatementService;
 import com.matera.digitaltwin.api.service.StatementService;
 import com.matera.digitaltwin.api.service.TransactionDisplayService;
 import com.matera.digitaltwin.api.service.WalletService;
@@ -32,16 +33,19 @@ public class WalletController {
 
     private static final Logger log = LoggerFactory.getLogger(WalletController.class);
 
-    private final WalletService      walletService;
-    private final ConversionService  conversionService;
-    private final StatementService   statementService;
+    private final WalletService         walletService;
+    private final ConversionService     conversionService;
+    private final StatementService      statementService;
+    private final ExcelStatementService excelStatementService;
 
     public WalletController(WalletService walletService,
                             ConversionService conversionService,
-                            StatementService statementService) {
-        this.walletService     = walletService;
-        this.conversionService = conversionService;
-        this.statementService  = statementService;
+                            StatementService statementService,
+                            ExcelStatementService excelStatementService) {
+        this.walletService         = walletService;
+        this.conversionService     = conversionService;
+        this.statementService      = statementService;
+        this.excelStatementService = excelStatementService;
     }
 
     @GetMapping("/api/wallets")
@@ -168,6 +172,46 @@ public class WalletController {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
         } catch (Exception e) {
             log.error("getStatement: PDF generation failed: {}", e.getMessage());
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Streams an account statement as an XLSX workbook directly to the response.
+     */
+    @GetMapping(value = "/api/wallets/statement/xlsx",
+                produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    public void getStatementXlsx(@RequestParam String currencyCode,
+                                 @RequestParam String from,
+                                 @RequestParam String to,
+                                 @RequestParam(defaultValue = "en") String lang,
+                                 HttpSession session,
+                                 HttpServletResponse response) throws Exception {
+        UserInfo user = (UserInfo) session.getAttribute("user");
+        if (user == null) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
+        }
+
+        LocalDate fromDate = LocalDate.parse(from);
+        LocalDate toDate   = LocalDate.parse(to);
+        if (fromDate.isAfter(toDate)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return;
+        }
+
+        String filename = "statement-" + currencyCode + "-" + from + "-" + to + ".xlsx";
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+
+        try {
+            excelStatementService.generate(user.email(), currencyCode, fromDate, toDate, lang,
+                    response.getOutputStream());
+        } catch (IllegalArgumentException e) {
+            log.warn("getStatementXlsx: bad request: {}", e.getMessage());
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        } catch (Exception e) {
+            log.error("getStatementXlsx: XLSX generation failed: {}", e.getMessage());
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
     }

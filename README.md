@@ -17,6 +17,7 @@ A multicurrency fintech wallet prototype built on Matera's Digital Twin ledger. 
 | **P2P transfer** | Send any currency to another platform user by email — debit sender, credit recipient |
 | **Live transactions** | Up to 50 most-recent transactions per account, enriched with i18n summary (e.g. "Sent 25.00 USD to John Doe") |
 | **Transaction detail** | Tap any transaction to see a full detail modal with labeled fields resolved from metadata |
+| **Account statements** | Generate a PDF (opens in native viewer) or Excel (.xlsx, downloaded) for any date range — streamed directly from the server, no temp files |
 | **Exchange rates** | Refreshed every 10 minutes from open.er-api.com; stablecoin pairs locked at 1:1 |
 | **Audit trail** | Every buy/sell/convert logs 4 mini-core tx IDs; every P2P logs 2 tx IDs + metadata blob |
 | **Welcome credit** | New users receive 10,000 BRL (Cash Deposit, code 10001) on first login |
@@ -98,6 +99,8 @@ User (browser / PWA)
 | API | Spring Boot 3.3 / Java 21 |
 | Auth | Google OAuth (implicit flow) + server-side domain + DB check |
 | Database | PostgreSQL (`digitaltwinapp` schema, 20 Liquibase migrations) |
+| PDF generation | OpenPDF 1.3.30 (LGPL) — streamed, no temp files |
+| Excel generation | Apache POI 5.3.0 (`poi-ooxml`) — streamed, no temp files |
 | Core Banking | Mini-Core (Flask, `localhost:5001`) |
 | Tunnel | Cloudflare Tunnel (`digitaltwinapp-api.materalabs.us → localhost:8081`) |
 | PWA | Web App Manifest + Service Worker |
@@ -126,7 +129,8 @@ api/                # Spring Boot Java API (port 8081)
     model/          # WalletDto, ConversionRequest, ConversionResultDto, P2pRequest
     service/        # Auth, WalletService (balances, transactions+metadata, rates, p2p), ConversionService,
                     # ExchangeRateService, UserAccountProvisioningService,
-                    # SchemaRegistryService, TransactionDisplayService, TransactionMetadataBackfillService
+                    # SchemaRegistryService, TransactionDisplayService, TransactionMetadataBackfillService,
+                    # StatementService (PDF via OpenPDF), ExcelStatementService (XLSX via Apache POI)
     config/         # WebConfig (CORS), SecurityConfig
   src/main/resources/
     db/changelog/   # 20 Liquibase migrations → digitaltwinapp schema
@@ -194,6 +198,8 @@ All endpoints require an active session (Google OAuth). Returns `401` if unauthe
 | `POST` | `/api/wallets/convert` | Buy / sell / convert (4 mini-core transactions) |
 | `POST` | `/api/wallets/p2p` | P2P transfer to another platform user |
 | `GET` | `/api/users/lookup?email=X` | Resolve email → name (for P2P confirmation) |
+| `GET` | `/api/wallets/statement?currencyCode=X&from=Y&to=Z&lang=en` | Stream PDF statement (`Content-Disposition: inline`) |
+| `GET` | `/api/wallets/statement/xlsx?currencyCode=X&from=Y&to=Z&lang=en` | Stream XLSX statement (`Content-Disposition: attachment`) |
 
 ---
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import { StoreProvider, useStore, clearWalletCache } from './store';
 import { Wallet as WalletType } from './types';
-import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode, RefreshCw, LogOut, Globe, Clock, FileText } from 'lucide-react';
+import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode, RefreshCw, LogOut, Globe, Clock, FileText, FileSpreadsheet } from 'lucide-react';
 import QRCode from 'react-qr-code';
 
 // Simple Toast component
@@ -1340,6 +1340,8 @@ function toISODate(d: Date): string {
   return d.toISOString().split('T')[0];
 }
 
+type StatementFormat = 'pdf' | 'xlsx';
+
 function StatementModal({ wallet, lang, onClose }: { wallet: WalletType; lang: string; onClose: () => void }) {
   const today = toISODate(new Date());
   const [period, setPeriod] = useState<StatementPeriod>('15');
@@ -1347,6 +1349,7 @@ function StatementModal({ wallet, lang, onClose }: { wallet: WalletType; lang: s
     const d = new Date(); d.setDate(d.getDate() - 15); return toISODate(d);
   });
   const [toDate, setToDate] = useState(today);
+  const [format, setFormat] = useState<StatementFormat>('pdf');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
 
@@ -1363,15 +1366,27 @@ function StatementModal({ wallet, lang, onClose }: { wallet: WalletType; lang: s
     setLoading(true);
     setError(false);
     try {
+      const endpoint = format === 'xlsx'
+        ? `${import.meta.env.BASE_URL}api/wallets/statement/xlsx`
+        : `${import.meta.env.BASE_URL}api/wallets/statement`;
       const resp = await fetch(
-        `${import.meta.env.BASE_URL}api/wallets/statement?currencyCode=${wallet.currency}&from=${fromDate}&to=${toDate}&lang=${lang}`,
+        `${endpoint}?currencyCode=${wallet.currency}&from=${fromDate}&to=${toDate}&lang=${lang}`,
         { credentials: 'include' }
       );
       if (!resp.ok) throw new Error();
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      if (format === 'xlsx') {
+        // For XLSX, trigger a download via a hidden anchor
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `statement-${wallet.currency}-${fromDate}-${toDate}.xlsx`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      } else {
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      }
       onClose();
     } catch {
       setError(true);
@@ -1393,7 +1408,9 @@ function StatementModal({ wallet, lang, onClose }: { wallet: WalletType; lang: s
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <div className="flex items-center gap-2">
-              <FileText size={20} className="text-matera-green" />
+              {format === 'xlsx'
+                ? <FileSpreadsheet size={20} className="text-matera-green" />
+                : <FileText size={20} className="text-matera-green" />}
               <h3 className="text-xl font-bold text-white">Statement</h3>
             </div>
             <button onClick={onClose} className="text-matera-muted hover:text-white p-1 transition-colors"><X size={24} /></button>
@@ -1445,6 +1462,32 @@ function StatementModal({ wallet, lang, onClose }: { wallet: WalletType; lang: s
             </div>
           )}
 
+          {/* Format toggle */}
+          <div className="flex gap-2 mb-5">
+            <button
+              onClick={() => setFormat('pdf')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
+                format === 'pdf'
+                  ? 'border-matera-green bg-matera-green/10 text-matera-green'
+                  : 'border-white/10 text-matera-muted hover:border-white/20'
+              }`}
+            >
+              <FileText size={15} />
+              PDF
+            </button>
+            <button
+              onClick={() => setFormat('xlsx')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
+                format === 'xlsx'
+                  ? 'border-matera-green bg-matera-green/10 text-matera-green'
+                  : 'border-white/10 text-matera-muted hover:border-white/20'
+              }`}
+            >
+              <FileSpreadsheet size={15} />
+              Excel
+            </button>
+          </div>
+
           {error && (
             <div className="flex items-center gap-2 text-red-400 text-sm mb-4">
               <AlertCircle size={16} />
@@ -1457,7 +1500,7 @@ function StatementModal({ wallet, lang, onClose }: { wallet: WalletType; lang: s
             disabled={loading}
             className="w-full bg-matera-green text-matera-blue-dark font-bold py-3 rounded-xl hover:bg-matera-green-dark transition-colors disabled:opacity-50"
           >
-            {loading ? 'Generating…' : 'Generate PDF'}
+            {loading ? 'Generating…' : `Generate ${format === 'xlsx' ? 'Excel' : 'PDF'}`}
           </button>
         </div>
       </div>

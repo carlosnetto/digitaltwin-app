@@ -540,3 +540,51 @@ Java allowedDomains     → only @matera.com and @zoripay.xyz get through
 ```
 
 With `Internal`, Google blocks before your code even runs.
+
+---
+
+## Mar 2026 — Transaction Metadata, Detail Modal & Account Statements
+
+### Transaction metadata system (migrations 014–020)
+
+A full metadata system was added on top of the mini-core ledger to store structured, i18n-ready context for every transaction:
+
+- **`transaction_codes`** (014) — curated subset of mini-core codes with domain labels
+- **`transaction_schemas`** (015) — JSON Schema (Draft 2020-12) per transaction code; validated with `networknt/json-schema-validator`
+- **`transaction_schema_i18n`** (016) — summary + detail display templates per code × language; `${field}` placeholders resolved at read time
+- External wallet send/receive codes 50004/40004 added (017)
+- Schemas seeded for all 12 codes; every blob carries `schema_version: 1` as first field (018)
+- **`transaction_metadata`** (019) — one row per ledger transaction, linked by `ledger_id` (mini-core `transaction_id`)
+- `schema_version` added as required first field to all metadata blobs (020)
+
+All existing stored data is already tagged as `schema_version=1` — no rework needed when v2 arrives.
+
+**Lesson (Liquibase `<validCheckSum>`):** When a changeset has already been applied and the file is later edited, do NOT modify `DATABASECHANGELOG` directly — add `<validCheckSum>9:old_hash</validCheckSum>` inside the changeset to accept the already-applied version while Liquibase continues to track the new hash going forward. See `018-seed-transaction-schemas.xml`.
+
+### TransactionDetailModal (frontend)
+
+Tapping any transaction row fetches `GET /api/wallets/transactions/{ledgerId}?lang=` and shows a detail modal with resolved summary + labeled fields from metadata. Falls back gracefully to raw ledger data (no metadata row) on 404.
+
+### PDF account statements
+
+`GET /api/wallets/statement` streams a formatted PDF account statement directly to `HttpServletResponse.getOutputStream()` — no temp file written at any point.
+
+- **Library:** OpenPDF 1.3.30 (LGPL). Uses `java.awt.Color` — `BaseColor` was removed in 1.3.30.
+- **Layout:** header (title + black Matera logo), info grid (holder/currency/period/generated), transaction table with navy header, alternating rows, red debits, green credits, totals row, page numbers.
+- **Date+time column** uses `created_at` (parsed as `OffsetDateTime` then `LocalDateTime` fallback) for accurate timestamps; `effective_date` is date-only.
+- **Delivery:** `Content-Disposition: inline` → browser opens native PDF viewer (mobile: share sheet; desktop: in-browser viewer).
+- **Frontend:** `blob()` → `URL.createObjectURL(blob)` → `window.open(url, '_blank')` → `revokeObjectURL` after 60 s.
+- **Logo:** black PNG (`matera-logo-statement.png`) loaded from Spring Boot classpath, separate from the green SVG used in the web app.
+
+**`StatementModal`** offers period selector (last 15/30/90 days, custom date range) and a **PDF / Excel format toggle**.
+
+### XLSX account statements
+
+`GET /api/wallets/statement/xlsx` streams an Excel workbook with identical data pipeline to the PDF.
+
+- **Library:** Apache POI 5.3.0 (`poi-ooxml`), `XSSFWorkbook`.
+- **Layout:** same navy header row, alternating white/light-blue rows, red debits, green credits, totals row. No embedded logo (POI picture sizing API produced unreliable results across spreadsheet viewers).
+- **Delivery:** `Content-Disposition: attachment` → browser/OS download handler picks it up directly.
+- **Frontend:** `blob()` → `URL.createObjectURL(blob)` → hidden `<a download="...xlsx">` click → `revokeObjectURL` after 10 s.
+
+**Lesson (POI image sizing):** `XSSFPicture.resize(scale)` preserves aspect ratio but its `scale` is relative to the image's "natural" size at 96 DPI — for a high-res PNG the natural size is enormous and the computed scale becomes tiny. Neither `ImageIO.read()` nor raw PNG IHDR byte parsing produced a reliable sizing result across environments. Decision: keep logo in PDF only.
