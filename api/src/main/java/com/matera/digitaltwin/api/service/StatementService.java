@@ -57,8 +57,9 @@ public class StatementService {
     private static final Color CREDIT_GRN = new Color(0,  130,  80);
     private static final Color BORDER     = new Color(220, 225, 235);
 
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("MMM dd, yyyy");
-    private static final DateTimeFormatter TS_FMT   = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm z");
+    private static final DateTimeFormatter DATE_FMT   = DateTimeFormatter.ofPattern("MMM dd, yyyy");
+    private static final DateTimeFormatter TX_DT_FMT  = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm");
+    private static final DateTimeFormatter TS_FMT     = DateTimeFormatter.ofPattern("MMM dd, yyyy HH:mm z");
 
     private final JdbcTemplate              jdbc;
     private final MiniCoreClient            miniCoreClient;
@@ -199,8 +200,8 @@ public class StatementService {
             return;
         }
 
-        // Columns: Date | Description | Debit | Credit | Balance
-        PdfPTable table = new PdfPTable(new float[]{14, 46, 13, 13, 14});
+        // Columns: Date+Time | Description | Debit | Credit | Balance
+        PdfPTable table = new PdfPTable(new float[]{20, 40, 13, 13, 14});
         table.setWidthPercentage(100);
         table.setSpacingBefore(10);
 
@@ -224,7 +225,7 @@ public class StatementService {
             alt = !alt;
 
             String ledgerId  = String.valueOf(((Number) tx.get("transaction_id")).longValue());
-            String date      = safeDate((String) tx.get("effective_date"));
+            String date      = safeDateTime((String) tx.get("created_at"));
             String desc      = summaries.getOrDefault(ledgerId,
                     capitalize((String) tx.getOrDefault("transaction_description", "")));
             boolean isCredit = "CREDIT".equals(tx.get("direction"));
@@ -363,6 +364,20 @@ public class StatementService {
             return LocalDate.parse(raw.substring(0, 10)).format(DATE_FMT);
         } catch (Exception e) {
             return raw;
+        }
+    }
+
+    private static String safeDateTime(String raw) {
+        if (raw == null || raw.isBlank()) return "";
+        try {
+            // mini-core returns ISO-8601: "2026-03-07T17:45:00" or with offset/Z
+            return java.time.OffsetDateTime.parse(raw).format(TX_DT_FMT);
+        } catch (Exception e) {
+            try {
+                return java.time.LocalDateTime.parse(raw).format(TX_DT_FMT);
+            } catch (Exception e2) {
+                return safeDate(raw);   // fall back to date-only if unparseable
+            }
         }
     }
 
