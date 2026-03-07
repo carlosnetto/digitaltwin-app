@@ -31,15 +31,16 @@ A multicurrency fintech wallet prototype built on Matera's Digital Twin ledger. 
 
 **Prerequisites:** Node.js 18+, Java 21+, Maven, PostgreSQL (`global_banking_db` Docker container running), mini-core Flask server running on port 5001
 
-**Terminal 1 — Java API:**
+**Terminal 1 — Wallet service:**
 ```bash
-cd api
+cd services/wallet
 mvn spring-boot:run -Dspring-boot.run.profiles=local
 # Runs on http://localhost:8081
 ```
 
-**Terminal 2 — Frontend:**
+**Terminal 2 — Channel (frontend):**
 ```bash
+cd channel
 npm install
 npm run dev        # http://localhost:3000
 ```
@@ -49,11 +50,11 @@ The Vite dev server proxies `/digitaltwin-app/api/*` to `localhost:8081` automat
 ## Build & Deploy
 
 ```bash
-# Frontend (Cloudflare Worker)
-npm run deploy     # build + wrangler deploy
+# Channel (Cloudflare Worker)
+cd channel && npm run deploy     # build + wrangler deploy
 
-# Tunnel (exposes Java API via stable public hostname)
-./tunnel-deploy.sh  # requires .tunnel-token (gitignored)
+# Tunnel (exposes wallet service via stable public hostname)
+cd channel && ./tunnel-deploy.sh  # requires .tunnel-token (gitignored)
 ```
 
 Deployed to `materalabs.us/digitaltwin-app` via Cloudflare Workers (route-based, no custom domain needed).
@@ -110,35 +111,47 @@ User (browser / PWA)
 ## Project Structure
 
 ```
-src/
-  App.tsx           # All UI: Dashboard, TransactionDetailModal, modals (Buy/Sell/Convert/Send/Receive/Settings), nav, login
-  store.tsx         # React Context: wallet state, localStorage cache, refreshWallets
-  types.ts          # TypeScript types + TX transaction code constants
-  main.tsx          # React DOM entry point
-  index.css         # Tailwind v4 @theme (Matera design tokens) + animations
-public/
-  manifest.json     # PWA manifest
-  sw.js             # Service worker (stale-while-revalidate)
-  icon.svg          # App icon
-  erd/              # SchemaSpy ERD output (digitaltwinapp schema)
-api/                # Spring Boot Java API (port 8081)
+channel/                    # Digital channel — React SPA + Cloudflare Worker
+  src/
+    App.tsx           # All UI: Dashboard, TransactionDetailModal, modals, nav, login
+    store.tsx         # React Context: wallet state, localStorage cache, refreshWallets
+    types.ts          # TypeScript types + TX transaction code constants
+    main.tsx          # React DOM entry point
+    index.css         # Tailwind v4 @theme (Matera design tokens) + animations
+  public/
+    manifest.json     # PWA manifest
+    sw.js             # Service worker (stale-while-revalidate)
+    icon.svg          # App icon
+    erd/              # SchemaSpy ERD output (digitaltwinapp schema)
+  worker.ts           # Cloudflare Worker: API proxy + prefix strip + SPA fallback
+  wrangler.jsonc      # Cloudflare Worker config
+  tunnel-deploy.sh    # Starts cloudflared tunnel → localhost:8081
+services/
+  wallet/             # Wallet microservice — Spring Boot (port 8081)
+    src/main/java/.../
+      client/         # MiniCoreClient: account CRUD + transaction creation
+      controller/     # AuthController, WalletController (wallets, convert, p2p, statements, etc.)
+      listener/       # PostgresNotificationListener: pg_notify → provision accounts
+      model/          # WalletDto, ConversionRequest, ConversionResultDto, P2pRequest
+      service/        # Auth, WalletService, ConversionService, ExchangeRateService,
+                      # UserAccountProvisioningService, SchemaRegistryService,
+                      # TransactionDisplayService, TransactionMetadataBackfillService,
+                      # StatementService (PDF via OpenPDF), ExcelStatementService (XLSX via Apache POI)
+      config/         # WebConfig (CORS), SecurityConfig
+    src/main/resources/
+      db/changelog/   # 20 Liquibase migrations → digitaltwinapp schema
+      application.yml
+      application-local.yml  # gitignored — DB credentials
+blockchain/                 # Blockchain orchestration platform — Spring Boot (port 8080)
   src/main/java/.../
-    client/         # MiniCoreClient: account CRUD + transaction creation
-    controller/     # AuthController, WalletController (wallets, convert, p2p, rate, transactions, detail, user lookup)
-    listener/       # PostgresNotificationListener: pg_notify → provision accounts
-    model/          # WalletDto, ConversionRequest, ConversionResultDto, P2pRequest
-    service/        # Auth, WalletService (balances, transactions+metadata, rates, p2p), ConversionService,
-                    # ExchangeRateService, UserAccountProvisioningService,
-                    # SchemaRegistryService, TransactionDisplayService, TransactionMetadataBackfillService,
-                    # StatementService (PDF via OpenPDF), ExcelStatementService (XLSX via Apache POI)
-    config/         # WebConfig (CORS), SecurityConfig
+    adaptor/          # BlockchainAdaptor + StablecoinIssuerAdaptor interfaces
+    adaptor/solana/   # Solana implementation (software.sava SDK)
+    adaptor/circle/   # Circle implementation (gated: circle.enabled=false)
+    service/          # Provisioning, monitoring, seed management
+    repository/       # JDBC repos for blockchain_schema tables
   src/main/resources/
-    db/changelog/   # 20 Liquibase migrations → digitaltwinapp schema
-    application.yml
-    application-local.yml  # gitignored — DB credentials
-worker.ts           # Cloudflare Worker: API proxy + prefix strip + SPA fallback
-wrangler.jsonc      # Cloudflare Worker config
-tunnel-deploy.sh    # Starts cloudflared tunnel → localhost:8081
+    db/changelog/     # 9 Liquibase migrations → blockchain_schema
+scripts/              # DB utility and data migration shell scripts
 ```
 
 ---

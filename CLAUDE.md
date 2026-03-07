@@ -10,24 +10,27 @@ Originally scaffolded from a Google AI Studio template. Gemini API removed.
 
 ### Frontend (PWA)
 ```
-src/
-  App.tsx       # All UI: Dashboard, WalletCard, TransactionList, TransactionDetailModal, modals, QRScanner, BottomNav, Sidebar, Login
-  store.tsx     # React Context: wallet state, transaction list, sendFunds, generateReceiveDetails
-  types.ts      # Wallet, Transaction interfaces + TX constants (transaction codes from mini-core)
-  main.tsx      # ReactDOM.createRoot entry
-  index.css     # Tailwind v4 @theme block + custom @keyframes (qr-scan)
-public/
-  manifest.json # PWA manifest
-  sw.js         # Service worker
-  icon.svg      # App icon
-worker.ts       # Cloudflare Worker: API proxy + prefix strip + SPA fallback
-wrangler.jsonc  # Cloudflare config
-tunnel-deploy.sh  # Starts cloudflared → localhost:8081 (requires .tunnel-token)
+channel/
+  src/
+    App.tsx       # All UI: Dashboard, WalletCard, TransactionList, TransactionDetailModal, modals, QRScanner, BottomNav, Sidebar, Login
+    store.tsx     # React Context: wallet state, transaction list, sendFunds, generateReceiveDetails
+    types.ts      # Wallet, Transaction interfaces + TX constants (transaction codes from mini-core)
+    main.tsx      # ReactDOM.createRoot entry
+    index.css     # Tailwind v4 @theme block + custom @keyframes (qr-scan)
+  public/
+    manifest.json # PWA manifest
+    sw.js         # Service worker
+    icon.svg      # App icon
+  worker.ts       # Cloudflare Worker: API proxy + prefix strip + SPA fallback
+  wrangler.jsonc  # Cloudflare config
+  tunnel-deploy.sh  # Starts cloudflared → localhost:8081 (requires .tunnel-token)
 ```
 
-### API (Spring Boot — port 8081)
+**Run:** `cd channel && npm run dev`
+
+### Wallet Service (Spring Boot — port 8081)
 ```
-api/
+services/wallet/
   src/main/java/.../
     client/MiniCoreClient.java       # getAccount, createAccount, createTransaction → localhost:5001
     controller/AuthController.java   # POST /api/auth/google, GET /api/auth/me, POST /api/auth/logout
@@ -77,7 +80,7 @@ api/
   TODO.md                  # API task backlog (ownership checks, API keys, forward metadata capture, etc.)
 ```
 
-**Run:** `cd api && mvn spring-boot:run -Dspring-boot.run.profiles=local`
+**Run:** `cd services/wallet && mvn spring-boot:run -Dspring-boot.run.profiles=local`
 
 **Auth flow:**
 1. Browser Google popup → access token
@@ -91,12 +94,14 @@ Credentials in `application-local.yml` (gitignored). Liquibase runs automaticall
 
 **CORS:** Non-secret production origins (`https://materalabs.us`) must be in `application.yml`, NOT only in `application-local.yml` — profile files only load when explicitly activated.
 
-### Backoffice (Spring Boot — port 8080)
+### Blockchain Platform (Spring Boot — port 8080)
 ```
-backoffice/
+blockchain/                          # Single Maven module today (Option A); future: split into core/ + adaptor-solana/ + adaptor-circle/
   src/main/java/.../
-    adaptor/solana/   # SolanaAdaptorImpl — HD derive, balances, send SOL/token, history
-    adaptor/circle/   # CircleMintAdaptorImpl — gated behind circle.enabled=false
+    adaptor/BlockchainAdaptor.java       # Generic interface: generateWallet, getNativeBalance, getTokenBalance, send*, history, isConfirmed
+    adaptor/StablecoinIssuerAdaptor.java # Generic interface: mint, burn, transfer (Circle, Paxos, etc.)
+    adaptor/solana/SolanaAdaptorImpl.java # Solana implementation: HD derive, balances, send SOL/token, history
+    adaptor/circle/CircleMintAdaptorImpl.java # Circle implementation — gated behind circle.enabled=false
     controller/       # WalletController: POST /api/wallets, POST /api/wallets/send
     service/          # WalletProvisioningService, TransactionProvisioningService,
                       # WalletMonitoringService (@Scheduled), MonitoringPersistenceService
@@ -108,8 +113,10 @@ backoffice/
   docker-compose.yml  # SchemaSpy ERD generator (run: docker-compose run schemaspy)
   docs/erd/           # Generated SchemaSpy HTML ERD (gitignored)
   SOLANA.md           # Full Solana + provisioning layer developer guide
-  TODO.md             # Backoffice task backlog
+  TODO.md             # Blockchain platform task backlog
 ```
+
+**Run:** `cd blockchain && mvn spring-boot:run -Dspring-boot.run.profiles=local`
 
 Solana SDK: `software.sava` (Solana Foundation endorsed). Do NOT use `solanaj`.
 Database: `blockchain_schema` in PostgreSQL (`global_banking_db` Docker container).
@@ -264,13 +271,13 @@ Both services share the same data pipeline: `resolveAccount` (DB query) → `min
 `pointer-events-none` ensures the watermark does not block interaction. Apply to any modal that shows simulated data (QR codes, receive addresses) until real implementation exists.
 
 ### Frontend vs API vs Backoffice
-- **Frontend (`src/`)** — SPA. Fetches live wallet balances and drives buy/sell conversions via the API.
-- **API (`api/`)** — Spring Boot on port 8081. Auth, live balances, exchange rates, conversions. Connected to frontend and mini-core.
-- **Backoffice (`backoffice/`)** — Spring Boot on port 8080. Manages on-chain Solana wallets. Not yet connected to the frontend.
+- **Channel (`channel/`)** — SPA. Fetches live wallet balances and drives buy/sell conversions via the wallet service.
+- **Wallet service (`services/wallet/`)** — Spring Boot on port 8081. Auth, live balances, exchange rates, conversions. Connected to channel and mini-core.
+- **Blockchain platform (`blockchain/`)** — Spring Boot on port 8080. Manages on-chain wallets via `BlockchainAdaptor`. Not yet connected to the channel.
 
 ## Design System
 
-Custom Tailwind colors defined in `src/index.css` `@theme` block:
+Custom Tailwind colors defined in `channel/src/index.css` `@theme` block:
 
 | Token | Value | Usage |
 |---|---|---|
@@ -354,7 +361,7 @@ Before posting: `ConversionService` checks `available_balance >= fromAmount` via
 
 Every transaction in mini-core carries only raw financial facts (amount, date, code). Domain context — who you sent to, what was converted at what rate, which blockchain — is stored in `digitaltwinapp.transaction_metadata` and linked by `ledger_id` (the mini-core `transaction_id` as string).
 
-Full system documented in `api/TRANSACTION-METADATA.md`. Key points:
+Full system documented in `services/wallet/TRANSACTION-METADATA.md`. Key points:
 
 - **`transaction_schemas`** — one JSON Schema (Draft 2020-12) per transaction code, enforcing the metadata blob shape. Pre-compiled by `SchemaRegistryService` at startup.
 - **`transaction_schema_i18n`** — `summary_data` (single string template) and `detailed_data` (labeled fields) per code × language. Resolved at runtime by `TransactionDisplayService` using `${dot.path}` placeholders against the metadata blob.

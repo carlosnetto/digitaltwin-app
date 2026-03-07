@@ -34,18 +34,18 @@ coverage/
 !.env.example
 
 # Spring Boot local config (equivalent of .env — contains secrets, never commit)
-backoffice/src/main/resources/application-local.yml
-!backoffice/src/main/resources/application-local.yml.example
-api/src/main/resources/application-local.yml
-!api/src/main/resources/application-local.yml.example
+blockchain/src/main/resources/application-local.yml
+!blockchain/src/main/resources/application-local.yml.example
+services/wallet/src/main/resources/application-local.yml
+!services/wallet/src/main/resources/application-local.yml.example
 
 # Cloudflare tunnel token (secret — never commit)
-.tunnel-token
+channel/.tunnel-token
 
 # SchemaSpy generated ERD output
-backoffice/docs/erd/
-api/docs/erd/
-public/erd/
+blockchain/docs/erd/
+services/wallet/docs/erd/
+channel/public/erd/
 
 # Maven build output
 **/target/
