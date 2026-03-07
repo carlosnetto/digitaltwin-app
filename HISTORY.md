@@ -506,3 +506,37 @@ Key details:
 - The other tunnel on the machine is completely unaffected
 
 The system now starts and routes correctly regardless of what other tunnels or cloudflared configurations exist on the machine.
+
+---
+
+## Mar 2026 — Multi-domain Google OAuth
+
+### Added @zoripay.xyz as an allowed login domain
+
+`google.allowed-domains` in `application.yml` changed from a single string to a
+comma-separated list. `GoogleAuthService` now checks `anyMatch` against the list.
+Adding future domains requires only a config change — no Java code change.
+
+### Lesson: `org_internal` blocks before your code runs
+
+After the config change, `@zoripay.xyz` users saw `403: org_internal` from Google —
+not from the Java API. This means the Google Cloud OAuth app was set to **Internal**
+(Workspace org only), so Google rejected the login attempt before it ever reached
+the domain check in `GoogleAuthService`.
+
+**Fix:** change the OAuth app's User Type from Internal → External in Google Cloud Console.
+
+**Navigation (Google reorganized this — easy to miss):**
+- Google Cloud Console → correct project → left sidebar → **Audience**
+- (NOT "OAuth Overview" which is metrics only, NOT "OAuth consent screen" which may not appear)
+- Change User Type to **External** → Save
+
+No new client ID or secret needed — credentials stay the same.
+
+**The two layers work together:**
+```
+Google OAuth (External) → allows any Google account to attempt login
+Java allowedDomains     → only @matera.com and @zoripay.xyz get through
+```
+
+With `Internal`, Google blocks before your code even runs.
