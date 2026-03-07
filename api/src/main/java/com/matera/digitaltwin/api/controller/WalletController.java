@@ -6,8 +6,10 @@ import com.matera.digitaltwin.api.model.ConversionResultDto;
 import com.matera.digitaltwin.api.model.UserInfo;
 import com.matera.digitaltwin.api.model.WalletDto;
 import com.matera.digitaltwin.api.service.ConversionService;
+import com.matera.digitaltwin.api.service.StatementService;
 import com.matera.digitaltwin.api.service.TransactionDisplayService;
 import com.matera.digitaltwin.api.service.WalletService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -31,10 +34,14 @@ public class WalletController {
 
     private final WalletService      walletService;
     private final ConversionService  conversionService;
+    private final StatementService   statementService;
 
-    public WalletController(WalletService walletService, ConversionService conversionService) {
+    public WalletController(WalletService walletService,
+                            ConversionService conversionService,
+                            StatementService statementService) {
         this.walletService     = walletService;
         this.conversionService = conversionService;
+        this.statementService  = statementService;
     }
 
     @GetMapping("/api/wallets")
@@ -117,6 +124,52 @@ public class WalletController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "User not found"));
         }
         return ResponseEntity.ok(Map.of("name", name));
+    }
+
+    /**
+     * Streams an account statement as a PDF directly to the response — no temp file written.
+     * The browser (or mobile OS PDF viewer) handles save / share / print natively.
+     *
+     * @param currencyCode e.g. "USD", "USDC"
+     * @param from         ISO date "yyyy-MM-dd" (inclusive)
+     * @param to           ISO date "yyyy-MM-dd" (inclusive)
+     * @param lang         BCP-47 language tag for i18n summaries (default: "en")
+     */
+    @GetMapping(value = "/api/wallets/statement", produces = "application/pdf")
+    public void getStatement(@RequestParam String currencyCode,
+                             @RequestParam String from,
+                             @RequestParam String to,
+                             @RequestParam(defaultValue = "en") String lang,
+                             HttpSession session,
+                             HttpServletResponse response) throws Exception {
+        UserInfo user = (UserInfo) session.getAttribute("user");
+        if (user == null) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
+        }
+
+        LocalDate fromDate = LocalDate.parse(from);
+        LocalDate toDate   = LocalDate.parse(to);
+        if (fromDate.isAfter(toDate)) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            return;
+        }
+
+        String filename = "statement-" + currencyCode + "-" + from + "-" + to + ".pdf";
+        response.setContentType("application/pdf");
+        // inline → browser opens PDF viewer (mobile: share sheet; desktop: in-browser viewer)
+        response.setHeader("Content-Disposition", "inline; filename=\"" + filename + "\"");
+
+        try {
+            statementService.generate(user.email(), currencyCode, fromDate, toDate, lang,
+                    response.getOutputStream());
+        } catch (IllegalArgumentException e) {
+            log.warn("getStatement: bad request: {}", e.getMessage());
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        } catch (Exception e) {
+            log.error("getStatement: PDF generation failed: {}", e.getMessage());
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        }
     }
 
     @PostMapping("/api/wallets/p2p")

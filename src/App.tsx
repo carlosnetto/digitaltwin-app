@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
 import { StoreProvider, useStore, clearWalletCache } from './store';
 import { Wallet as WalletType } from './types';
-import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode, RefreshCw, LogOut, Globe, Clock } from 'lucide-react';
+import { Wallet, ArrowDown, ArrowUp, ArrowDownLeft, ArrowUpRight, Plus, Minus, Repeat, Activity, Settings, Home, X, Copy, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, QrCode, RefreshCw, LogOut, Globe, Clock, FileText } from 'lucide-react';
 import QRCode from 'react-qr-code';
 
 // Simple Toast component
@@ -75,6 +75,7 @@ function Dashboard({ user, onLogout, timezone, lang }: { user: { name: string; p
   const [txs, setTxs] = useState<MiniCoreTx[]>([]);
   const [txsCapped, setTxsCapped] = useState(false);
   const [selectedTx, setSelectedTx] = useState<MiniCoreTx | null>(null);
+  const [showStatement, setShowStatement] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -291,7 +292,14 @@ function Dashboard({ user, onLogout, timezone, lang }: { user: { name: string; p
       <section className="mt-4 px-4 md:px-8">
         <div className="flex justify-between items-center mb-2">
           <h3 className="text-lg font-semibold text-white">Recent Transactions</h3>
-          <span className="text-sm text-matera-muted">{activeWallet.currency}</span>
+          <button
+            onClick={() => setShowStatement(true)}
+            title="Download statement"
+            className="flex items-center gap-1.5 text-matera-muted hover:text-matera-green transition-colors text-sm"
+          >
+            <FileText size={16} />
+            <span className="hidden sm:inline">Statement</span>
+          </button>
         </div>
 
         {txs.length > 0 ? (
@@ -352,6 +360,10 @@ function Dashboard({ user, onLogout, timezone, lang }: { user: { name: string; p
 
       {selectedTx && (
         <TransactionDetailModal tx={selectedTx} lang={lang} timezone={timezone} onClose={() => setSelectedTx(null)} />
+      )}
+
+      {showStatement && (
+        <StatementModal wallet={activeWallet} lang={lang} onClose={() => setShowStatement(false)} />
       )}
     </div>
   );
@@ -1321,6 +1333,137 @@ const TIMEZONES = [
     { label: 'Hawaii Time — HST (UTC−10)', value: 'Pacific/Honolulu' },
   ]},
 ];
+
+type StatementPeriod = '15' | '30' | '90' | 'custom';
+
+function toISODate(d: Date): string {
+  return d.toISOString().split('T')[0];
+}
+
+function StatementModal({ wallet, lang, onClose }: { wallet: WalletType; lang: string; onClose: () => void }) {
+  const today = toISODate(new Date());
+  const [period, setPeriod] = useState<StatementPeriod>('15');
+  const [fromDate, setFromDate] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 15); return toISODate(d);
+  });
+  const [toDate, setToDate] = useState(today);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const handlePeriodChange = (p: StatementPeriod) => {
+    setPeriod(p);
+    if (p !== 'custom') {
+      const d = new Date(); d.setDate(d.getDate() - parseInt(p));
+      setFromDate(toISODate(d));
+      setToDate(today);
+    }
+  };
+
+  const handleGenerate = async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const resp = await fetch(
+        `${import.meta.env.BASE_URL}api/wallets/statement?currencyCode=${wallet.currency}&from=${fromDate}&to=${toDate}&lang=${lang}`,
+        { credentials: 'include' }
+      );
+      if (!resp.ok) throw new Error();
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      onClose();
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const periods: { value: StatementPeriod; label: string }[] = [
+    { value: '15',     label: 'Last 15 days' },
+    { value: '30',     label: 'Last 30 days' },
+    { value: '90',     label: 'Last 90 days' },
+    { value: 'custom', label: 'Custom range' },
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-matera-card w-full max-w-sm rounded-3xl border border-white/10 shadow-2xl animate-in slide-in-from-bottom-8 md:slide-in-from-bottom-0 md:zoom-in-95" onClick={e => e.stopPropagation()}>
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-2">
+              <FileText size={20} className="text-matera-green" />
+              <h3 className="text-xl font-bold text-white">Statement</h3>
+            </div>
+            <button onClick={onClose} className="text-matera-muted hover:text-white p-1 transition-colors"><X size={24} /></button>
+          </div>
+
+          <p className="text-sm text-matera-muted mb-4">{wallet.currency} account — select period</p>
+
+          {/* Period selector */}
+          <div className="space-y-2 mb-5">
+            {periods.map(p => (
+              <button
+                key={p.value}
+                onClick={() => handlePeriodChange(p.value)}
+                className={`w-full text-left px-4 py-3 rounded-xl border transition-colors text-sm font-medium ${
+                  period === p.value
+                    ? 'border-matera-green bg-matera-green/10 text-matera-green'
+                    : 'border-white/10 text-matera-text hover:border-white/20'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Custom date pickers */}
+          {period === 'custom' && (
+            <div className="flex gap-3 mb-5">
+              <div className="flex-1">
+                <p className="text-xs text-matera-muted mb-1">From</p>
+                <input
+                  type="date"
+                  value={fromDate}
+                  max={toDate}
+                  onChange={e => setFromDate(e.target.value)}
+                  className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-matera-green transition-colors"
+                />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs text-matera-muted mb-1">To</p>
+                <input
+                  type="date"
+                  value={toDate}
+                  min={fromDate}
+                  max={today}
+                  onChange={e => setToDate(e.target.value)}
+                  className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-matera-green transition-colors"
+                />
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="flex items-center gap-2 text-red-400 text-sm mb-4">
+              <AlertCircle size={16} />
+              <span>Failed to generate statement. Try again.</span>
+            </div>
+          )}
+
+          <button
+            onClick={handleGenerate}
+            disabled={loading}
+            className="w-full bg-matera-green text-matera-blue-dark font-bold py-3 rounded-xl hover:bg-matera-green-dark transition-colors disabled:opacity-50"
+          >
+            {loading ? 'Generating…' : 'Generate PDF'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface ResolvedField { label: string; value: string; }
 interface ResolvedDisplay { summary: string; fields: ResolvedField[]; }
