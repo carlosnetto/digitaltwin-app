@@ -24,7 +24,7 @@ minicore:
   base-url: http://localhost:5001
 
 google:
-  allowed-domains: matera.com,zoripay.xyz
+  allowed-domains: matera.com,zoripay.xyz,circle.com,intuit.com
 
 app:
   # Comma-separated. Override in application-local.yml for additional origins.
