@@ -14,16 +14,12 @@ import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfPageEventHelper;
 import com.lowagie.text.pdf.PdfWriter;
 import com.matera.digitaltwin.api.client.MiniCoreClient;
-import org.apache.batik.transcoder.TranscoderInput;
-import org.apache.batik.transcoder.TranscoderOutput;
-import org.apache.batik.transcoder.image.PNGTranscoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.awt.Color;
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigDecimal;
@@ -389,25 +385,19 @@ public class StatementService {
     // ── Logo transcoding ───────────────────────────────────────────────────
 
     /**
-     * Transcodes the classpath SVG logo to a PNG byte array at the requested height.
-     * Batik renders the SVG paths entirely in-memory — no files, no network calls.
+     * Loads the statement logo PNG from the classpath.
      *
-     * @param heightPt desired rendered height in points (width scales proportionally from viewBox)
      * @return PNG bytes ready for {@link Image#getInstance(byte[])}, or {@code null} on failure
      */
-    private byte[] logoAsPng(float heightPt) {
-        try (InputStream svgStream = getClass().getResourceAsStream("/matera-logo.svg")) {
-            if (svgStream == null) {
-                log.warn("logoAsPng: matera-logo.svg not found on classpath");
+    private byte[] logoAsPng(float ignoredHeight) {
+        try (InputStream in = getClass().getResourceAsStream("/matera-logo-statement.png")) {
+            if (in == null) {
+                log.warn("logoAsPng: matera-logo-statement.png not found on classpath");
                 return null;
             }
-            PNGTranscoder transcoder = new PNGTranscoder();
-            transcoder.addTranscodingHint(PNGTranscoder.KEY_HEIGHT, heightPt);
-            ByteArrayOutputStream pngOut = new ByteArrayOutputStream();
-            transcoder.transcode(new TranscoderInput(svgStream), new TranscoderOutput(pngOut));
-            return pngOut.toByteArray();
+            return in.readAllBytes();
         } catch (Exception e) {
-            log.warn("logoAsPng: transcoding failed: {}", e.getMessage());
+            log.warn("logoAsPng: failed to load logo: {}", e.getMessage());
             return null;
         }
     }

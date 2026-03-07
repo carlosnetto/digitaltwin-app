@@ -155,7 +155,7 @@ function Dashboard({ user, onLogout, timezone, lang }: { user: { name: string; p
       <header className="flex justify-between items-center mb-4 px-4 md:px-8">
         <div className="md:hidden">
           <img
-            src={`${import.meta.env.BASE_URL}assets/matera-logo.svg`}
+            src={`${import.meta.env.BASE_URL}assets/Company Logo - Web.svg`}
             alt="Matera"
             className="h-4 object-contain"
           />
@@ -1282,7 +1282,7 @@ function Sidebar({ user, onLogout, onSettingsPress }: { user: User; onLogout: ()
     <div className="hidden md:flex flex-col w-64 bg-matera-card border-r border-white/5 h-screen fixed left-0 top-0 p-6">
       <div className="mb-10">
         <img
-          src={`${import.meta.env.BASE_URL}assets/matera-logo.svg`}
+          src={`${import.meta.env.BASE_URL}assets/Company Logo - Web.svg`}
           alt="Matera"
           className="h-6"
           referrerPolicy="no-referrer"
@@ -1653,7 +1653,7 @@ function Login({ onLogin }: { onLogin: (user: User) => void }) {
         <div className="absolute bottom-0 left-0 w-64 h-64 bg-matera-blue/20 rounded-full blur-3xl -ml-32 -mb-32"></div>
 
         <img
-          src={`${import.meta.env.BASE_URL}assets/matera-logo.svg`}
+          src={`${import.meta.env.BASE_URL}assets/Company Logo - Web.svg`}
           alt="Matera"
           className="h-8 mb-12 relative z-10"
         />
