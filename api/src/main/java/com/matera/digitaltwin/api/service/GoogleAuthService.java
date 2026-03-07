@@ -12,14 +12,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
+
 @Service
 public class GoogleAuthService {
 
     private static final Logger log = LoggerFactory.getLogger(GoogleAuthService.class);
     private static final String USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
 
-    @Value("${google.allowed-domain}")
-    private String allowedDomain;
+    @Value("${google.allowed-domains}")
+    private List<String> allowedDomains;
 
     private final RestClient restClient = RestClient.create();
     private final JdbcTemplate jdbc;
@@ -45,11 +47,13 @@ public class GoogleAuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid token response");
         }
 
-        if (!info.email().endsWith("@" + allowedDomain)) {
+        boolean domainAllowed = allowedDomains.stream()
+                .anyMatch(d -> info.email().endsWith("@" + d));
+        if (!domainAllowed) {
             log.warn("Login attempt from non-allowed domain: {}", info.email());
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
-                    "Access restricted to @" + allowedDomain + " accounts");
+                    "Access restricted to: " + allowedDomains.stream().map(d -> "@" + d).toList());
         }
 
         String status;
@@ -58,7 +62,7 @@ public class GoogleAuthService {
                     "SELECT status FROM digitaltwinapp.users WHERE email = ?",
                     String.class, info.email());
         } catch (EmptyResultDataAccessException e) {
-            log.info("Auto-provisioning new @{} user: {}", allowedDomain, info.email());
+            log.info("Auto-provisioning new user: {}", info.email());
             jdbc.update(
                     "INSERT INTO digitaltwinapp.users (id, email, name, status) VALUES (gen_random_uuid(), ?, ?, 'active')",
                     info.email(), info.name());
